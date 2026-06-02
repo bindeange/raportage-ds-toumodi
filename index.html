@@ -1,0 +1,1348 @@
+﻿<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sygess Cloud - District Toumodi</title>
+    <style>
+        :root { --primary: #2c3e50; --success: #27ae60; --danger: #e74c3c; --accent: #3498db; }
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background: #f0f2f5; margin: 0; padding: 10px; font-size: 13px; }
+        .container { max-width: 1000px; margin: auto; background: white; padding: 20px; border-radius: 12px; box-shadow: 0 4px 20px rgba(0,0,0,0.1); }
+        .no-disp { display: none !important; }
+        .card { border: 1px solid #ddd; padding: 25px; border-radius: 10px; background: #fff; }
+        select, input { width: 100%; padding: 12px; margin: 8px 0; border: 1px solid #ccc; border-radius: 8px; box-sizing: border-box; font-size: 14px; }
+        button { padding: 12px 20px; border: none; border-radius: 8px; cursor: pointer; font-weight: bold; transition: 0.3s; }
+        .btn-login { background: var(--success); color: white; width: 100%; font-size: 16px; }
+        .btn-small { color:white; padding:6px 14px; }
+        .district-menu { display:flex; gap:10px; margin-bottom:15px; flex-wrap:wrap; }
+        .district-menu button { background:#ecf0f1; color:var(--primary); border:1px solid #ccd1d1; }
+        .district-menu button.active { background:var(--primary); color:white; }
+        .status-ok { color:green; font-weight:bold; }
+        .status-wait { color:orange; font-weight:bold; }
+        .status-open { color:#2980b9; font-weight:bold; }
+        .district-filters { display:flex; gap:12px; align-items:flex-end; flex-wrap:wrap; margin:10px 0 15px; }
+        .district-filters label { min-width:150px; }
+        .dashboard-wrap { overflow:auto; border:1px solid #ddd; border-radius:8px; }
+        .dashboard-table { min-width:900px; margin-top:0; }
+        .dashboard-table th:first-child, .dashboard-table td:first-child { position:sticky; left:0; z-index:2; background:#fff; text-align:left; min-width:190px; }
+        .dashboard-table th:first-child { background:var(--primary); z-index:3; }
+        .dashboard-table th { white-space:nowrap; }
+        .dash-cell { font-weight:bold; min-width:82px; }
+        .dash-button { width:100%; min-width:58px; padding:7px 8px; border-radius:6px; color:white; font-size:12px; }
+        .dash-ok { background:#e8f8ef !important; color:#1e8449; }
+        .dash-ok .dash-button { background:#27ae60; }
+        .dash-missing { background:#fdecea !important; color:#c0392b; }
+        .dash-missing .dash-button { background:#e74c3c; }
+        .dash-partial { background:#fff4db !important; color:#b9770e; }
+        .dash-partial .dash-button { background:#f39c12; }
+        .dash-none { background:#f4f6f7 !important; color:#7f8c8d; }
+        .dash-check { background:#eef5ff !important; color:#21618c; }
+        .dash-check .dash-button { background:#2980b9; }
+        .dash-detail { margin-top:12px; border:1px solid #ddd; border-radius:8px; padding:12px; background:#fbfcfc; }
+        .dash-detail h4 { margin:0 0 8px; color:var(--primary); }
+        .dash-detail ul { margin:8px 0 0 18px; padding:0; }
+        .dash-detail li { margin-bottom:4px; }
+        .dash-legend { display:flex; gap:10px; flex-wrap:wrap; font-size:12px; margin:8px 0; }
+        .dash-legend span { padding:4px 8px; border-radius:6px; border:1px solid #ddd; }
+        .banner { background: var(--primary); color: #2ecc71; padding: 12px 20px; display: flex; justify-content: space-between; align-items: center; border-radius: 8px; margin-bottom: 20px; }
+        .logout-btn { background: var(--danger); color: white; padding: 6px 12px; font-size: 11px; }
+        table { width: 100%; border-collapse: collapse; margin-top: 15px; background: white; }
+        th { background: var(--primary); color: white; padding: 12px 8px; border: 1px solid #ddd; font-size: 11px; text-transform: uppercase; }
+        td { border: 1px solid #ddd; padding: 8px; text-align: center; }
+        tr:nth-child(even) { background-color: #f9f9f9; }
+        .input-saisie { width: 70px; text-align: center; padding: 5px; border: 1px solid #bdc3c7; border-radius: 4px; }
+        .row-error { background: #fab1a0 !important; }
+        .st-init { background: #e3f2fd; font-weight: bold; color: #0d47a1; }
+        .btn-save { background: var(--success); color: white; width: 100%; font-size: 18px; padding: 15px; margin-top: 25px; box-shadow: 0 4px 10px rgba(39,174,96,0.3); }
+        .btn-print { background:#34495e; color:white; width:100%; font-size:16px; padding:13px; margin-top:12px; }
+        .print-only { display:none; }
+        @media print {
+            body { background:white; padding:0; font-size:11px; }
+            .container { max-width:none; box-shadow:none; border-radius:0; padding:0; }
+            #login-zone, #agent-home, #district-zone, .banner, #save-btn, #print-btn, #hidden-meds-box, #loader, button { display:none !important; }
+            #saisie-zone { display:block !important; }
+            .print-only { display:block; text-align:center; margin-bottom:10px; }
+            table { page-break-inside:auto; }
+            tr { page-break-inside:avoid; page-break-after:auto; }
+            th, td { padding:4px; font-size:9px; }
+            input { border:none; padding:0; font-size:9px; text-align:center; }
+        }
+        #loader { display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.4); z-index:999; align-items:center; justify-content:center; }
+        #loader.active { display:flex; }
+        .spinner { background:white; padding:30px 40px; border-radius:12px; text-align:center; font-size:16px; font-weight:bold; color:var(--primary); }
+        @media (max-width: 600px) { th, td { padding: 5px 2px; font-size: 10px; } .input-saisie { width: 45px; } }
+    </style>
+</head>
+<body>
+
+<div id="loader"><div class="spinner">Chargement...</div></div>
+
+<div class="container">
+
+    <!-- CONNEXION -->
+    <div id="login-zone" class="card">
+        <h2 style="text-align:center; color:var(--primary);">SYGESS TOUMODI</h2>
+        <p style="text-align:center; color:#7f8c8d;">Portail de saisie des rapports mensuels</p>
+        <label><b>SELECTIONNEZ VOTRE ESPC :</b></label>
+        <select id="sel-structure"><option>Chargement des centres...</option></select>
+        <label><b>MOT DE PASSE :</b></label>
+        <input type="password" id="pass" placeholder="Entrez votre code secret">
+        <button onclick="login()" class="btn-login">ACCEDER AU PORTAIL</button>
+        <p id="login-msg" style="color:red; text-align:center; font-weight:bold;"></p>
+    </div>
+
+    <!-- APPLICATION -->
+    <div id="app-zone" class="no-disp">
+        <div class="banner">
+            <div>
+                <b id="display-name" style="color:white; font-size:14px;">---</b><br>
+                <span>Periode : </span><b id="display-date" style="color:white;">---</b>
+            </div>
+            <button onclick="location.reload()" class="logout-btn">QUITTER</button>
+        </div>
+
+        <!-- Liste des rapports -->
+        <div id="agent-home">
+            <h3 style="color:var(--primary); border-bottom:2px solid var(--success); padding-bottom:5px;">Mes rapports a saisir</h3>
+            <table>
+                <thead><tr><th>Programme / Famille</th><th>Statut</th><th>Action</th></tr></thead>
+                <tbody id="home-body"></tbody>
+            </table>
+        </div>
+
+        <!-- District -->
+        <div id="district-zone" class="no-disp">
+            <h3 style="color:var(--primary); border-bottom:2px solid var(--success); padding-bottom:5px;">Suivi des rapports ESPC</h3>
+            <div class="district-menu">
+                <button id="district-tab-dashboard" class="active" onclick="showDistrictDashboard()">Tableau de bord</button>
+                <button id="district-tab-rapports" onclick="showDistrictReportsView()">Rapports</button>
+                <button id="district-tab-passwords" onclick="showPasswordManager()">Mots de passe</button>
+            </div>
+
+            <div id="district-dashboard-view">
+                <div class="district-filters">
+                    <label><b>PERIODE :</b><select id="dashboard-period" onchange="loadDistrictDashboard()"></select></label>
+                    <button class="btn-small" style="background:var(--accent);" onclick="loadDistrictDashboard()">Actualiser</button>
+                </div>
+                <div class="dash-legend">
+                    <span class="dash-ok">OK : tout est renseigne</span>
+                    <span class="dash-partial">PARTIEL : une partie seulement</span>
+                    <span class="dash-missing">X : information attendue</span>
+                    <span class="dash-check">M-1 : livraison du mois precedent a verifier</span>
+                    <span class="dash-none">- : rien attendu</span>
+                </div>
+                <div class="dashboard-wrap">
+                    <table class="dashboard-table">
+                        <thead id="dashboard-head"></thead>
+                        <tbody id="dashboard-body"></tbody>
+                    </table>
+                </div>
+                <div id="dashboard-detail" class="dash-detail no-disp"></div>
+            </div>
+
+            <div id="district-reports-view" class="no-disp">
+                <label><b>ESPC :</b></label>
+                <select id="district-espc" onchange="loadDistrictReports()"></select>
+                <label><b>PERIODE :</b></label>
+                <select id="district-period" onchange="loadDistrictReports()"></select>
+                <label><b>PROGRAMME DE RAPPORTAGE :</b></label>
+                <select id="district-programme" onchange="loadDistrictReports()"></select>
+                <table>
+                    <thead><tr><th>ESPC</th><th>Statut</th><th>Date</th><th>Action</th></tr></thead>
+                    <tbody id="district-body"></tbody>
+                </table>
+            </div>
+
+            <div id="district-passwords-view" class="no-disp">
+                <div style="display:flex; justify-content:space-between; gap:10px; align-items:center; flex-wrap:wrap;">
+                    <b>Gestion des mots de passe des structures</b>
+                    <button class="btn-small" style="background:#f39c12;" onclick="resetAllPasswords()">Tout remettre a 0000</button>
+                </div>
+                <table>
+                    <thead><tr><th>Structure</th><th>Role</th><th>Mot de passe</th><th>Action</th></tr></thead>
+                    <tbody id="password-body"></tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- Formulaire de saisie -->
+        <div id="saisie-zone" class="no-disp">
+            <button onclick="showHome()" style="background:#95a5a6; color:white; margin-bottom:15px;">Retour a la liste</button>
+            <div id="print-header" class="print-only">
+                <h2>SYGESS TOUMODI</h2>
+                <div id="print-subtitle"></div>
+            </div>
+            <h3 id="form-title" style="color:var(--accent); margin:5px 0;">---</h3>
+
+            <div style="overflow-x:auto;">
+                <h4 id="stock-title">1. Mouvements de Stocks</h4>
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Designation</th>
+                            <th>Stock Initial</th>
+                            <th>Recu</th>
+                            <th>Distribue</th>
+                            <th>Pertes/Ajust.</th>
+                            <th>Disponible</th>
+                        </tr>
+                    </thead>
+                    <tbody id="med-body"></tbody>
+                </table>
+                <div id="hidden-meds-box" class="no-disp" style="margin-top:10px; border:1px dashed #3498db; padding:10px; background:#f8fbff;">
+                    Ajouter un medicament masque :
+                    <select id="hidden-meds-select" onchange="revealMedication(this.value)">
+                        <option value="">-- Choisir --</option>
+                    </select>
+                </div>
+
+                <h4 style="margin-top:25px;">2. Indicateurs d'activite</h4>
+                <table>
+                    <thead id="indic-head">
+                        <tr>
+                            <th>Indicateur</th>
+                            <th>Valeur</th>
+                            <th>NOUVELLE UTILISATRICE DE CETTE METHODE CE MOIS</th>
+                            <th>ANCIENNE UTILISATRICE DE CETTE METHODE CE MOIS</th>
+                        </tr>
+                    </thead>
+                    <tbody id="indic-body"></tbody>
+                </table>
+            </div>
+
+            <button id="save-btn" class="btn-save" onclick="saveData()">ENVOYER LE RAPPORT AU DISTRICT</button>
+            <button id="print-btn" class="btn-print no-disp" onclick="printCurrentReport()">IMPRIMER / PDF</button>
+        </div>
+    </div>
+</div>
+
+<script>
+const API_URL = ['localhost', '127.0.0.1'].includes(window.location.hostname)
+    ? "http://localhost:3000/api/query"
+    : "/api/query";
+
+async function neonQuery(sql, params = []) {
+    try {
+        const res = await fetch(API_URL, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ query: sql, params })
+        });
+        if (!res.ok) { const e = await res.json(); console.error("Erreur serveur:", e); return []; }
+        const data = await res.json();
+        return data.rows || [];
+    } catch (e) {
+        console.error("Erreur connexion:", e);
+        document.getElementById('login-msg').innerText = "Serveur injoignable. Verifiez que node server.js est lance.";
+        return [];
+    }
+}
+
+function loader(on) { document.getElementById('loader').classList.toggle('active', on); }
+
+function getPreviousPeriod(mois, annee) {
+    const m = parseInt(mois, 10);
+    const a = parseInt(annee, 10);
+    return m === 1
+        ? { mois: 12, annee: a - 1 }
+        : { mois: m - 1, annee: a };
+}
+
+let user = null, currentM, currentA, listFamilles = [];
+let currentFamilleId = null, currentFamilleNom = null;
+let currentMeds = [], currentIndics = [], currentIndicLinks = [];
+let currentReadOnly = false, currentReportStatus = null, districtSelectedEntite = null;
+let currentReportUser = null, currentReportM = null, currentReportA = null;
+let districtEspcs = [];
+
+// 1. Initialisation
+async function init() {
+    loader(true);
+    try {
+        const ents = await neonQuery(`
+            SELECT id, nom_entite, role
+            FROM entites e
+            WHERE (e.role = 'USER' AND NOT EXISTS (
+                SELECT 1
+                FROM agents_asc a
+                WHERE a.code_asc = e.code_structure OR e.nom_entite ILIKE 'ASC:%'
+            ))
+               OR e.role = 'ADMIN'
+            ORDER BY CASE WHEN e.role = 'ADMIN' THEN 0 ELSE 1 END, e.nom_entite
+        `);
+        const sel = document.getElementById('sel-structure');
+        sel.innerHTML = ents.length > 0
+            ? '<option value="">-- Choisissez votre ESPC ou le District --</option>' + ents.map(e => `<option value="${e.id}">${e.role === 'ADMIN' ? 'DISTRICT SANITAIRE DE TOUMODI' : e.nom_entite}</option>`).join('')
+            : '<option value="">Aucun centre trouve</option>';
+
+        const params = await neonQuery("SELECT cle, valeur FROM parametres");
+        currentM = params.find(p => p.cle === 'mois_actif')?.valeur || "??";
+        currentA = params.find(p => p.cle === 'annee_active')?.valeur || "????";
+        document.getElementById('display-date').innerText = currentM + " / " + currentA;
+
+        listFamilles = await neonQuery("SELECT * FROM familles ORDER BY nom_famille");
+    } finally {
+        loader(false);
+    }
+}
+
+// 2. Connexion
+async function login() {
+    const id  = document.getElementById('sel-structure').value;
+    const pwd = document.getElementById('pass').value;
+    const msg = document.getElementById('login-msg');
+    if (!id || !pwd) { msg.innerText = "Veuillez remplir tous les champs"; return; }
+
+    loader(true);
+    const res = await neonQuery("SELECT * FROM entites WHERE id = $1::integer AND mot_de_passe = $2", [id, pwd]);
+    loader(false);
+
+    if (res.length > 0) {
+        user = res[0];
+        document.getElementById('login-zone').classList.add('no-disp');
+        document.getElementById('app-zone').classList.remove('no-disp');
+        document.getElementById('display-name').innerText = isDistrict() ? 'DISTRICT SANITAIRE DE TOUMODI' : user.nom_entite;
+        isDistrict() ? showDistrictHome() : showHome();
+    } else {
+        msg.innerText = "Mot de passe incorrect !";
+    }
+}
+
+function isDistrict() {
+    return user && user.role === 'ADMIN';
+}
+
+function isLockedReportStatus(status) {
+    return ['TRANSMIS', 'Saisi', 'SAISI', 'Valide', 'Validé', 'VALIDE', 'VALIDÉ'].includes(status);
+}
+
+// 3. Liste des rapports
+async function showHome() {
+    if (isDistrict()) {
+        showDistrictHome();
+        return;
+    }
+    document.getElementById('agent-home').classList.remove('no-disp');
+    document.getElementById('district-zone').classList.add('no-disp');
+    document.getElementById('saisie-zone').classList.add('no-disp');
+
+    loader(true);
+    const [raps, ascRaps] = await Promise.all([
+        neonQuery(
+            `SELECT
+                m.famille_id,
+                MAX(r.statut) AS statut
+             FROM rapports r
+             JOIN rapport_stock_details rsd ON rsd.rapport_id = r.id
+             JOIN medicaments m ON m.id = rsd.medicament_id
+             WHERE r.entite_id = $1
+               AND r.mois = $2
+               AND r.annee = $3
+             GROUP BY m.famille_id`,
+            [user.id, currentM, currentA]
+        ),
+        neonQuery(`
+            SELECT DISTINCT ON (ae.id)
+                ae.id AS asc_entite_id,
+                ae.nom_entite AS asc_nom,
+                7 AS famille_id,
+                r.statut,
+                r.date_soumission,
+                r.id AS rapport_id,
+                r.mois,
+                r.annee
+            FROM agents_asc a
+            JOIN entites ae ON ae.code_structure = a.code_asc
+            LEFT JOIN rapports r
+              ON r.entite_id = ae.id
+             AND r.mois = $2
+             AND r.annee = $3
+            LEFT JOIN rapport_stock_details rsd ON rsd.rapport_id = r.id
+            LEFT JOIN medicaments m ON m.id = rsd.medicament_id AND m.famille_id = 7
+            WHERE a.code_espc = $1
+            ORDER BY ae.id, r.id DESC NULLS LAST
+        `, [user.code_structure, currentM, currentA])
+    ]);
+    loader(false);
+
+    let html = "";
+    listFamilles.forEach(f => {
+        const r = raps.find(rep => rep.famille_id === f.id);
+        const status = r?.statut || null;
+        const locked = isLockedReportStatus(status);
+        const statut = locked
+            ? `<span class="status-ok">TRANSMIS</span>`
+            : status === 'REOUVERT'
+                ? `<span class="status-open">REOUVERT</span>`
+                : `<span class="status-wait">A SAISIR</span>`;
+        const actionLabel = locked ? 'Consulter' : 'Ouvrir';
+        html += `<tr>
+            <td align="left"><b>${f.nom_famille}</b></td>
+            <td>${statut}</td>
+            <td><button onclick="startSaisie(${f.id}, '${f.nom_famille.replace(/'/g, "\\'")}', ${locked})"
+                class="btn-small" style="background:var(--accent);">${actionLabel}</button></td>
+        </tr>`;
+
+        ascRaps
+            .filter(rep => Number(rep.famille_id) === Number(f.id))
+            .forEach(rep => {
+                const ascMois = rep.mois || currentM;
+                const ascAnnee = rep.annee || currentA;
+                const ascStatus = rep.rapport_id
+                    ? `<span class="status-ok">ASC ${rep.statut || 'SAISI'} (${ascMois}/${ascAnnee})</span>`
+                    : `<span class="status-wait">ASC A SAISIR (${ascMois}/${ascAnnee})</span>`;
+                html += `<tr>
+                    <td align="left" style="padding-left:25px;">ASC - ${rep.asc_nom}</td>
+                    <td>${ascStatus}</td>
+                    <td><button onclick="viewAscReport(${rep.asc_entite_id}, ${f.id}, '${f.nom_famille.replace(/'/g, "\\'")} - ${rep.asc_nom.replace(/'/g, "\\'")}', ${ascMois}, ${ascAnnee})"
+                        class="btn-small" style="background:#7f8c8d;">Ouvrir ASC</button></td>
+                </tr>`;
+            });
+    });
+    document.getElementById('home-body').innerHTML = html || '<tr><td colspan="3">Aucun programme trouve</td></tr>';
+}
+
+async function viewAscReport(entiteId, familleId, title, mois, annee) {
+    const rows = await neonQuery("SELECT * FROM entites WHERE id = $1", [entiteId]);
+    if (!rows.length) return;
+    const previous = districtSelectedEntite;
+    districtSelectedEntite = rows[0];
+    await startSaisie(familleId, title, true, { mois, annee });
+    districtSelectedEntite = previous;
+}
+
+async function showDistrictHome() {
+    districtSelectedEntite = null;
+    document.getElementById('agent-home').classList.add('no-disp');
+    document.getElementById('saisie-zone').classList.add('no-disp');
+    document.getElementById('district-zone').classList.remove('no-disp');
+    showDistrictDashboard();
+
+    if (!districtEspcs.length) {
+        districtEspcs = await neonQuery(`
+            SELECT id, nom_entite
+            FROM entites e
+            WHERE e.role = 'USER'
+              AND NOT EXISTS (
+                  SELECT 1
+                  FROM agents_asc a
+                  WHERE a.code_asc = e.code_structure OR e.nom_entite ILIKE 'ASC:%'
+              )
+            ORDER BY e.nom_entite
+        `);
+    }
+
+    const espcSel = document.getElementById('district-espc');
+    espcSel.innerHTML = '<option value="">-- Tous les ESPC --</option>' +
+        districtEspcs.map(e => `<option value="${e.id}">${e.nom_entite}</option>`).join('');
+
+    fillDistrictPeriodSelect('district-period');
+    fillDistrictPeriodSelect('dashboard-period');
+
+    const sel = document.getElementById('district-programme');
+    sel.innerHTML = '<option value="">-- Choisissez un programme --</option>' +
+        listFamilles.map(f => `<option value="${f.id}">${f.nom_famille}</option>`).join('');
+    document.getElementById('district-body').innerHTML = '<tr><td colspan="4">Choisissez un programme pour afficher les rapports.</td></tr>';
+    await loadDistrictDashboard();
+}
+
+function fillDistrictPeriodSelect(selectId) {
+    const periodSel = document.getElementById(selectId);
+    if (!periodSel) return;
+    const currentValue = periodSel.value;
+    const periods = [];
+    let pm = Number(currentM), pa = Number(currentA);
+    for (let i = 0; i < 18; i++) {
+        periods.push({ mois: pm, annee: pa });
+        pm -= 1;
+        if (pm === 0) { pm = 12; pa -= 1; }
+    }
+    periodSel.innerHTML = periods.map(p => `<option value="${p.mois}/${p.annee}">${p.mois}/${p.annee}</option>`).join('');
+    if (currentValue && periods.some(p => `${p.mois}/${p.annee}` === currentValue)) {
+        periodSel.value = currentValue;
+    }
+}
+
+function setDistrictTab(tab) {
+    document.getElementById('district-tab-dashboard').classList.toggle('active', tab === 'dashboard');
+    document.getElementById('district-tab-rapports').classList.toggle('active', tab === 'rapports');
+    document.getElementById('district-tab-passwords').classList.toggle('active', tab === 'passwords');
+    document.getElementById('district-dashboard-view').classList.toggle('no-disp', tab !== 'dashboard');
+    document.getElementById('district-reports-view').classList.toggle('no-disp', tab !== 'rapports');
+    document.getElementById('district-passwords-view').classList.toggle('no-disp', tab !== 'passwords');
+}
+
+async function showDistrictDashboard() {
+    setDistrictTab('dashboard');
+    fillDistrictPeriodSelect('dashboard-period');
+    await loadDistrictDashboard();
+}
+
+function showDistrictReportsView() {
+    setDistrictTab('rapports');
+}
+
+async function showPasswordManager() {
+    setDistrictTab('passwords');
+    await loadPasswordList();
+}
+
+async function loadPasswordList() {
+    loader(true);
+    const rows = await neonQuery(`
+        SELECT id, nom_entite, role, mot_de_passe
+        FROM entites e
+        WHERE e.role = 'ADMIN'
+           OR (e.role = 'USER' AND NOT EXISTS (
+                SELECT 1
+                FROM agents_asc a
+                WHERE a.code_asc = e.code_structure OR e.nom_entite ILIKE 'ASC:%'
+           ))
+        ORDER BY CASE WHEN e.role = 'ADMIN' THEN 0 ELSE 1 END, e.nom_entite
+    `);
+    loader(false);
+
+    document.getElementById('password-body').innerHTML = rows.map(r => {
+        const name = r.role === 'ADMIN' ? 'DISTRICT SANITAIRE DE TOUMODI' : r.nom_entite;
+        return `<tr>
+            <td align="left"><b>${name}</b></td>
+            <td>${r.role}</td>
+            <td><input type="text" id="pwd_${r.id}" value="${r.mot_de_passe || ''}" style="max-width:160px; text-align:center;"></td>
+            <td><button class="btn-small" style="background:var(--success);" onclick="updatePassword(${r.id})">Enregistrer</button></td>
+        </tr>`;
+    }).join('') || '<tr><td colspan="4">Aucune structure trouvee.</td></tr>';
+}
+
+async function updatePassword(entiteId) {
+    const value = document.getElementById('pwd_' + entiteId).value.trim();
+    if (!value) {
+        alert("Le mot de passe ne peut pas etre vide.");
+        return;
+    }
+    loader(true);
+    await neonQuery("UPDATE entites SET mot_de_passe = $1 WHERE id = $2", [value, entiteId]);
+    loader(false);
+    alert("Mot de passe mis a jour.");
+}
+
+async function resetAllPasswords() {
+    if (!confirm("Remettre tous les mots de passe des structures a 0000 ?")) return;
+    loader(true);
+    await neonQuery("UPDATE entites SET mot_de_passe = '0000'");
+    loader(false);
+    await loadPasswordList();
+    alert("Tous les mots de passe ont ete remis a 0000.");
+}
+
+
+
+function htmlEscape(value) {
+    return String(value ?? '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+}
+
+function jsArg(value) {
+    return String(value ?? '').replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+}
+
+function renderDashboardCell(stat, entityId, familyId, title, mois, annee) {
+    const attendus = Number(stat?.attendus || 0);
+    const renseignes = Number(stat?.renseignes || 0);
+    const m1Livres = Number(stat?.m1_livres || 0);
+    const detailClick = `showDashboardMissing(${entityId}, ${familyId}, '${jsArg(title)}', ${mois}, ${annee})`;
+    const onclick = `viewDistrictReport(${entityId}, ${familyId}, '${jsArg(title)}', ${mois}, ${annee})`;
+    if (!stat || attendus === 0) {
+        if (m1Livres > 0) {
+            return `<td class="dash-cell dash-check" title="Livraison M-1 trouvee, mais stock disponible M-1 absent dans Neon"><button class="dash-button" onclick="${onclick}">M-1<br><small>${m1Livres}</small></button><button class="dash-button" style="margin-top:4px;background:#7f8c8d;" onclick="${detailClick}">Liste</button></td>`;
+        }
+        return '<td class="dash-cell dash-none" title="Aucun medicament avec stock disponible M-1 ou stock recu du mois">-</td>';
+    }
+    if (renseignes >= attendus) {
+        return `<td class="dash-cell dash-ok" title="${renseignes}/${attendus} medicaments renseignes"><button class="dash-button" onclick="${onclick}">OK<br><small>${renseignes}/${attendus}</small></button></td>`;
+    }
+    if (renseignes > 0) {
+        return `<td class="dash-cell dash-partial" title="${renseignes}/${attendus} medicaments renseignes"><button class="dash-button" onclick="${onclick}">PART<br><small>${renseignes}/${attendus}</small></button><button class="dash-button" style="margin-top:4px;background:#7f8c8d;" onclick="${detailClick}">Liste</button></td>`;
+    }
+    return `<td class="dash-cell dash-missing" title="Information attendue : 0/${attendus}"><button class="dash-button" onclick="${onclick}">X<br><small>0/${attendus}</small></button><button class="dash-button" style="margin-top:4px;background:#7f8c8d;" onclick="${detailClick}">Liste</button></td>`;
+}
+
+
+
+async function showDashboardMissing(entiteId, familleId, title, mois, annee) {
+    const previous = getPreviousPeriod(mois, annee);
+    loader(true);
+    const rows = await neonQuery(`
+        WITH target AS (
+            SELECT id, code_structure
+            FROM entites
+            WHERE id = $1
+        ),
+        livraisons_m AS (
+            SELECT m.id AS medicament_id, SUM(COALESCE(ld.quantite_livree, 0)) AS total_livre
+            FROM target t
+            JOIN livraisons_district ld ON ld.code_structure = t.code_structure
+            JOIN medicaments m ON ld.code_med IN (m.code1, m.code2, m.code3, m.code4, m.code5)
+            WHERE ld.mois::text = $3::text
+              AND ld.annee::text = $4::text
+              AND m.famille_id = $2
+            GROUP BY m.id
+        ),
+        livraisons_m1 AS (
+            SELECT m.id AS medicament_id, SUM(COALESCE(ld.quantite_livree, 0)) AS total_livre
+            FROM target t
+            JOIN livraisons_district ld ON ld.code_structure = t.code_structure
+            JOIN medicaments m ON ld.code_med IN (m.code1, m.code2, m.code3, m.code4, m.code5)
+            WHERE ld.mois::text = $5::text
+              AND ld.annee::text = $6::text
+              AND m.famille_id = $2
+            GROUP BY m.id
+        ),
+        attendu AS (
+            SELECT
+                m.id AS medicament_id,
+                m.dci,
+                COALESCE(prev.stock_disponible, 0) AS stock_m1,
+                COALESCE(liv.total_livre, 0) AS livre_m,
+                COALESCE(liv1.total_livre, 0) AS livre_m1
+            FROM medicaments m
+            CROSS JOIN target t
+            LEFT JOIN rapports rp
+              ON rp.entite_id = t.id
+             AND (rp.famille_id = $2 OR rp.famille_id IS NULL)
+             AND rp.mois = $5::integer
+             AND rp.annee = $6::integer
+            LEFT JOIN rapport_stock_details prev
+              ON prev.rapport_id = rp.id
+             AND prev.medicament_id = m.id
+            LEFT JOIN livraisons_m liv ON liv.medicament_id = m.id
+            LEFT JOIN livraisons_m1 liv1 ON liv1.medicament_id = m.id
+            WHERE m.famille_id = $2
+              AND (COALESCE(prev.stock_disponible, 0) > 0 OR COALESCE(liv.total_livre, 0) > 0 OR COALESCE(liv1.total_livre, 0) > 0)
+        )
+        SELECT
+            a.dci,
+            a.stock_m1,
+            a.livre_m,
+            a.livre_m1,
+            cur.medicament_id IS NOT NULL AS renseigne
+        FROM attendu a
+        CROSS JOIN target t
+        LEFT JOIN rapports r
+          ON r.entite_id = t.id
+         AND (r.famille_id = $2 OR r.famille_id IS NULL)
+         AND r.mois = $3::integer
+         AND r.annee = $4::integer
+        LEFT JOIN rapport_stock_details cur
+          ON cur.rapport_id = r.id
+         AND cur.medicament_id = a.medicament_id
+        ORDER BY a.dci
+    `, [entiteId, familleId, mois, annee, previous.mois, previous.annee]);
+    loader(false);
+
+    const missing = rows.filter(r => !r.renseigne);
+    const detail = document.getElementById('dashboard-detail');
+    detail.classList.remove('no-disp');
+    detail.innerHTML = `
+        <h4>${htmlEscape(title)} - medicaments attendus ${mois}/${annee}</h4>
+        <div>Source stock initial : disponible M-1 ${previous.mois}/${previous.annee}. Source stock recu : livraisons du mois ${mois}/${annee}.</div>
+        <div><b>${rows.length}</b> attendu(s), <b>${rows.length - missing.length}</b> renseigne(s), <b>${missing.length}</b> manquant(s).</div>
+        ${missing.length ? '<ul>' + missing.map(r => `<li><b>${htmlEscape(r.dci)}</b> - stock M-1: ${r.stock_m1}, recu M: ${r.livre_m}, livraison M-1 a verifier: ${r.livre_m1}</li>`).join('') + '</ul>' : '<div style="color:green;font-weight:bold;margin-top:8px;">Tous les medicaments attendus sont renseignes.</div>'}
+    `;
+}
+
+async function loadDistrictDashboard() {
+    const periodValue = document.getElementById('dashboard-period')?.value || (currentM + '/' + currentA);
+    const [selectedM, selectedA] = periodValue.split('/').map(Number);
+    const previous = getPreviousPeriod(selectedM, selectedA);
+    const ascFamille = listFamilles.find(f => f.est_pnlp || String(f.nom_famille).toUpperCase().includes('PNLP')) || listFamilles.find(f => Number(f.id) === 7) || listFamilles[0];
+    if (!ascFamille) return;
+
+    loader(true);
+    const [ascRows, stats] = await Promise.all([
+        neonQuery(`
+            SELECT
+                e.id AS espc_id,
+                e.nom_entite AS espc_nom,
+                ae.id AS asc_id,
+                ae.nom_entite AS asc_nom
+            FROM entites e
+            JOIN agents_asc a ON a.code_espc = e.code_structure
+            JOIN entites ae ON ae.code_structure = a.code_asc
+            WHERE e.role = 'USER'
+              AND NOT EXISTS (
+                  SELECT 1
+                  FROM agents_asc ax
+                  WHERE ax.code_asc = e.code_structure OR e.nom_entite ILIKE 'ASC:%'
+              )
+            ORDER BY e.nom_entite, ae.nom_entite
+        `),
+        neonQuery(`
+            WITH espc AS (
+                SELECT id, nom_entite, code_structure
+                FROM entites e
+                WHERE e.role = 'USER'
+                  AND NOT EXISTS (
+                      SELECT 1
+                      FROM agents_asc a
+                      WHERE a.code_asc = e.code_structure OR e.nom_entite ILIKE 'ASC:%'
+                  )
+            ),
+            visible_entities AS (
+                SELECT id AS entite_id, id AS espc_id, nom_entite, code_structure, 'ESPC' AS type_entite
+                FROM espc
+                UNION ALL
+                SELECT ae.id AS entite_id, e.id AS espc_id, ae.nom_entite, ae.code_structure, 'ASC' AS type_entite
+                FROM espc e
+                JOIN agents_asc a ON a.code_espc = e.code_structure
+                JOIN entites ae ON ae.code_structure = a.code_asc
+            ),
+            livraisons_m AS (
+                SELECT
+                    ld.code_structure,
+                    m.id AS medicament_id,
+                    SUM(COALESCE(ld.quantite_livree, 0)) AS total_livre
+                FROM livraisons_district ld
+                JOIN medicaments m
+                  ON ld.code_med IN (m.code1, m.code2, m.code3, m.code4, m.code5)
+                WHERE ld.mois::text = $1::text
+                  AND ld.annee::text = $2::text
+                GROUP BY ld.code_structure, m.id
+            ),
+            livraisons_m1 AS (
+                SELECT
+                    ld.code_structure,
+                    m.id AS medicament_id,
+                    SUM(COALESCE(ld.quantite_livree, 0)) AS total_livre
+                FROM livraisons_district ld
+                JOIN medicaments m
+                  ON ld.code_med IN (m.code1, m.code2, m.code3, m.code4, m.code5)
+                WHERE ld.mois::text = $3::text
+                  AND ld.annee::text = $4::text
+                GROUP BY ld.code_structure, m.id
+            )
+            SELECT
+                ve.entite_id,
+                ve.espc_id,
+                ve.type_entite,
+                f.id AS famille_id,
+                r.id AS rapport_id,
+                r.statut,
+                COUNT(DISTINCT m.id) FILTER (
+                    WHERE COALESCE(prev.stock_disponible, 0) > 0
+                       OR COALESCE(liv.total_livre, 0) > 0
+                       OR COALESCE(cur.stock_initial, 0) > 0
+                       OR COALESCE(cur.quantite_recue, 0) > 0
+                ) AS attendus,
+                COUNT(DISTINCT m.id) FILTER (
+                    WHERE (
+                        COALESCE(prev.stock_disponible, 0) > 0
+                        OR COALESCE(liv.total_livre, 0) > 0
+                        OR COALESCE(cur.stock_initial, 0) > 0
+                        OR COALESCE(cur.quantite_recue, 0) > 0
+                    )
+                    AND cur.medicament_id IS NOT NULL
+                ) AS renseignes,
+                COUNT(DISTINCT m.id) FILTER (
+                    WHERE COALESCE(prev.stock_disponible, 0) = 0
+                      AND COALESCE(liv.total_livre, 0) = 0
+                      AND COALESCE(liv1.total_livre, 0) > 0
+                ) AS m1_livres
+            FROM visible_entities ve
+            CROSS JOIN familles f
+            JOIN medicaments m ON m.famille_id = f.id
+            LEFT JOIN rapports r
+              ON r.entite_id = ve.entite_id
+             AND (r.famille_id = f.id OR r.famille_id IS NULL)
+             AND r.mois = $1::integer
+             AND r.annee = $2::integer
+            LEFT JOIN rapport_stock_details cur
+              ON cur.rapport_id = r.id
+             AND cur.medicament_id = m.id
+            LEFT JOIN rapports rp
+              ON rp.entite_id = ve.entite_id
+             AND (rp.famille_id = f.id OR rp.famille_id IS NULL)
+             AND rp.mois = $3::integer
+             AND rp.annee = $4::integer
+            LEFT JOIN rapport_stock_details prev
+              ON prev.rapport_id = rp.id
+             AND prev.medicament_id = m.id
+            LEFT JOIN livraisons_m liv
+              ON liv.code_structure = ve.code_structure
+             AND liv.medicament_id = m.id
+            LEFT JOIN livraisons_m1 liv1
+              ON liv1.code_structure = ve.code_structure
+             AND liv1.medicament_id = m.id
+            GROUP BY ve.entite_id, ve.espc_id, ve.type_entite, f.id, r.id, r.statut
+        `, [selectedM, selectedA, previous.mois, previous.annee])
+    ]);
+    loader(false);
+
+    const statMap = {};
+    stats.forEach(s => {
+        statMap[`${s.entite_id}:${s.famille_id}`] = s;
+    });
+
+    const ascByEspc = {};
+    ascRows.forEach(a => {
+        if (!ascByEspc[a.espc_id]) ascByEspc[a.espc_id] = [];
+        ascByEspc[a.espc_id].push(a);
+    });
+
+    const ascColumns = ascRows.map(a => ({
+        id: a.asc_id,
+        parentId: a.espc_id,
+        label: 'ASC ' + a.asc_nom,
+        name: a.asc_nom
+    }));
+
+    const headers = ['<th>ESPC</th>']
+        .concat(listFamilles.map(f => `<th>${htmlEscape(f.nom_famille)}</th>`))
+        .concat(ascColumns.map(a => `<th>${htmlEscape(a.label)}</th>`));
+    document.getElementById('dashboard-head').innerHTML = '<tr>' + headers.join('') + '</tr>';
+
+    const rowsHtml = districtEspcs.map(espc => {
+        const familyCells = listFamilles.map(f => {
+            const stat = statMap[`${espc.id}:${f.id}`];
+            return renderDashboardCell(stat, espc.id, f.id, `${f.nom_famille} - ${espc.nom_entite}`, selectedM, selectedA);
+        }).join('');
+
+        const ascCells = ascColumns.map(a => {
+            if (Number(a.parentId) !== Number(espc.id)) {
+                return '<td class="dash-cell dash-none">-</td>';
+            }
+            const stat = statMap[`${a.id}:${ascFamille.id}`];
+            return renderDashboardCell(stat, a.id, ascFamille.id, `${ascFamille.nom_famille} - ${a.name}`, selectedM, selectedA);
+        }).join('');
+
+        return `<tr><td><b>${htmlEscape(espc.nom_entite)}</b></td>${familyCells}${ascCells}</tr>`;
+    }).join('');
+
+    document.getElementById('dashboard-body').innerHTML = rowsHtml || '<tr><td>Aucun ESPC trouve.</td></tr>';
+}
+
+async function loadDistrictReports() {
+    const familleId = document.getElementById('district-programme').value;
+    const espcId = document.getElementById('district-espc').value;
+    const periodValue = document.getElementById('district-period').value || (currentM + '/' + currentA);
+    const [selectedM, selectedA] = periodValue.split('/').map(Number);
+    if (!familleId) {
+        document.getElementById('district-body').innerHTML = '<tr><td colspan="4">Choisissez un programme pour afficher les rapports.</td></tr>';
+        return;
+    }
+
+    loader(true);
+    const rows = await neonQuery(`
+        WITH espc AS (
+            SELECT id, nom_entite, code_structure
+            FROM entites e
+            WHERE e.role = 'USER'
+              AND ($4::integer IS NULL OR e.id = $4::integer)
+              AND NOT EXISTS (
+                  SELECT 1
+                  FROM agents_asc a
+                  WHERE a.code_asc = e.code_structure OR e.nom_entite ILIKE 'ASC:%'
+              )
+        ),
+        visible_entities AS (
+            SELECT
+                e.id AS entite_id,
+                e.nom_entite,
+                'ESPC' AS type_entite,
+                e.nom_entite AS parent_nom,
+                0 AS ordre
+            FROM espc e
+
+            UNION ALL
+
+            SELECT
+                ae.id AS entite_id,
+                ae.nom_entite,
+                'ASC' AS type_entite,
+                e.nom_entite AS parent_nom,
+                1 AS ordre
+            FROM espc e
+            JOIN agents_asc a ON a.code_espc = e.code_structure
+            JOIN entites ae ON ae.code_structure = a.code_asc
+        ),
+        latest_reports AS (
+            SELECT DISTINCT ON (v.entite_id)
+                v.entite_id,
+                r.id,
+                r.statut,
+                r.date_soumission,
+                r.mois,
+                r.annee
+            FROM visible_entities v
+            JOIN rapports r ON r.entite_id = v.entite_id
+            JOIN rapport_stock_details rsd ON rsd.rapport_id = r.id
+            JOIN medicaments m ON m.id = rsd.medicament_id
+            WHERE m.famille_id = $1
+              AND r.mois = $2
+              AND r.annee = $3
+            ORDER BY v.entite_id, r.annee::integer DESC, r.mois::integer DESC, r.id DESC
+        )
+        SELECT
+            v.entite_id,
+            v.nom_entite,
+            v.type_entite,
+            r.id AS rapport_id,
+            r.statut,
+            r.date_soumission,
+            r.mois,
+            r.annee
+        FROM visible_entities v
+        LEFT JOIN latest_reports r ON r.entite_id = v.entite_id
+        ORDER BY v.parent_nom, v.ordre, v.nom_entite
+    `, [familleId, selectedM, selectedA, espcId || null]);
+    loader(false);
+
+    const selectedFamille = listFamilles.find(f => Number(f.id) === Number(familleId));
+    document.getElementById('district-body').innerHTML = rows.map(r => {
+        const adminValidated = ['TRANSMIS', 'Valide', 'Validé', 'VALIDE', 'VALIDÉ'].includes(r.statut);
+        const statut = adminValidated
+            ? `<span class="status-ok">${r.statut}</span>`
+            : r.statut === 'REOUVERT'
+                ? `<span class="status-open">REOUVERT</span>`
+                : r.statut
+                    ? `<span class="status-wait">${r.statut}</span>`
+                    : `<span class="status-wait">NON RECU</span>`;
+        const date = r.date_soumission ? new Date(r.date_soumission).toLocaleDateString('fr-FR') : '-';
+        const period = r.mois && r.annee ? `${r.mois}/${r.annee}` : '-';
+        const label = r.type_entite === 'ASC' ? `ASC - ${r.nom_entite}` : `<b>${r.nom_entite}</b>`;
+            const openMois = r.mois || selectedM;
+        const openAnnee = r.annee || selectedA;
+        const openLabel = r.rapport_id ? 'Consulter' : (Number(selectedM) === Number(currentM) && Number(selectedA) === Number(currentA) ? 'Creer / ouvrir' : '');
+        const viewBtn = openLabel
+            ? `<button class="btn-small" style="background:var(--accent);" onclick="viewDistrictReport(${r.entite_id}, ${selectedFamille.id}, '${selectedFamille.nom_famille.replace(/'/g, "\\'")} - ${r.nom_entite.replace(/'/g, "\\'")}', ${openMois}, ${openAnnee})">${openLabel}</button>`
+            : '';
+        const validateBtn = r.rapport_id && !adminValidated
+            ? `<button class="btn-small" style="background:var(--success);" onclick="validateReport(${r.rapport_id})">Valider</button>`
+            : '';
+        const reopenBtn = r.rapport_id && adminValidated
+            ? `<button class="btn-small" style="background:#f39c12;" onclick="reopenReport(${r.rapport_id})">Reouvrir</button>`
+            : '';
+        return `<tr>
+            <td align="left" style="${r.type_entite === 'ASC' ? 'padding-left:25px;color:#555;' : ''}">${label}</td>
+            <td>${statut}<br><small>${period}</small></td>
+            <td>${date}</td>
+            <td>${viewBtn} ${validateBtn} ${reopenBtn}</td>
+        </tr>`;
+    }).join('') || '<tr><td colspan="4">Aucun ESPC trouve.</td></tr>';
+}
+
+async function viewDistrictReport(entiteId, familleId, familleNom, mois = null, annee = null) {
+    const rows = await neonQuery("SELECT * FROM entites WHERE id = $1", [entiteId]);
+    if (!rows.length) return;
+    districtSelectedEntite = rows[0];
+    const target = mois && annee ? { mois, annee } : null;
+    const isCurrentPeriod = !target || (Number(target.mois) === Number(currentM) && Number(target.annee) === Number(currentA));
+    await startSaisie(familleId, familleNom, !isCurrentPeriod, target);
+}
+
+async function validateReport(rapportId) {
+    if (!rapportId || !confirm("Valider ce rapport au niveau district ?")) return;
+    loader(true);
+    await neonQuery("UPDATE rapports SET statut = 'TRANSMIS', date_soumission = COALESCE(date_soumission, NOW()) WHERE id = $1", [rapportId]);
+    loader(false);
+    loadDistrictReports();
+}
+
+async function reopenReport(rapportId) {
+    if (!rapportId || !confirm("Reouvrir ce rapport pour permettre a l'ESPC de le modifier ?")) return;
+    loader(true);
+    await neonQuery("UPDATE rapports SET statut = 'REOUVERT' WHERE id = $1", [rapportId]);
+    loader(false);
+    loadDistrictReports();
+}
+
+// 4. Formulaire de saisie
+async function startSaisie(fId, fNom, readOnly = false, targetPeriod = null) {
+    currentFamilleId  = fId;
+    currentFamilleNom = fNom;
+    const reportUser = districtSelectedEntite || user;
+    const periodM = targetPeriod?.mois || currentM;
+    const periodA = targetPeriod?.annee || currentA;
+    const districtEditingCurrent = isDistrict()
+        && Number(periodM) === Number(currentM)
+        && Number(periodA) === Number(currentA);
+    currentReadOnly = readOnly && !districtEditingCurrent;
+    currentReportUser = reportUser;
+    currentReportM = periodM;
+    currentReportA = periodA;
+
+    document.getElementById('agent-home').classList.add('no-disp');
+    document.getElementById('district-zone').classList.add('no-disp');
+    document.getElementById('saisie-zone').classList.remove('no-disp');
+    document.getElementById('form-title').innerText = currentReadOnly
+        ? `Consultation : ${fNom} (${periodM}/${periodA})`
+        : isDistrict()
+            ? `Saisie District : ${fNom} (${periodM}/${periodA})`
+            : "Rapport : " + fNom;
+    const saveBtn = document.getElementById('save-btn');
+    saveBtn.classList.toggle('no-disp', currentReadOnly);
+    saveBtn.innerText = isDistrict() ? 'ENREGISTRER LA CORRECTION DISTRICT' : 'ENVOYER LE RAPPORT AU DISTRICT';
+
+    loader(true);
+
+    // Charger medicaments, indicateurs, dernier stock disponible ET livraisons du mois
+    const previousPeriod = getPreviousPeriod(periodM, periodA);
+    const [meds, indics, indicLinks, stockPrecedent, rapportCourant, indicateursCourants, livraisons, rapportMeta] = await Promise.all([
+        neonQuery("SELECT id, dci, unite_comptage, code1, code2, code3, code4, code5 FROM medicaments WHERE famille_id = $1 ORDER BY dci", [fId]),
+        neonQuery("SELECT id, nom_indicateur, est_pnsme, type_saisie FROM indicateurs WHERE famille_id = $1 ORDER BY id", [fId]),
+        neonQuery(`
+            SELECT im.indicateur_id, im.medicament_id
+            FROM indicateur_meds im
+            JOIN medicaments m ON m.id = im.medicament_id
+            WHERE m.famille_id = $1
+        `, [fId]),
+        // Stock initial du mois M = stock disponible du mois M-1 pour ce centre + famille
+        neonQuery(`
+            SELECT DISTINCT ON (rsd.medicament_id)
+                rsd.medicament_id,
+                rsd.stock_disponible
+            FROM rapport_stock_details rsd
+            JOIN rapports r ON r.id = rsd.rapport_id
+            JOIN medicaments m ON m.id = rsd.medicament_id
+            WHERE r.entite_id = $1
+              AND m.famille_id = $2
+              AND r.mois = $3
+              AND r.annee = $4
+              AND COALESCE(r.statut, '') <> ''
+            ORDER BY rsd.medicament_id, r.annee::integer DESC, r.mois::integer DESC, r.id DESC
+        `, [reportUser.id, fId, previousPeriod.mois, previousPeriod.annee]),
+        // Valeurs deja transmises pour la periode courante
+        neonQuery(`
+            SELECT
+                rsd.medicament_id,
+                rsd.quantite_recue,
+                rsd.quantite_distribuee,
+                rsd.pertes_ajustements,
+                rsd.stock_disponible,
+                rsd.commentaire
+            FROM rapports r
+            JOIN rapport_stock_details rsd ON rsd.rapport_id = r.id
+            JOIN medicaments m ON m.id = rsd.medicament_id
+            WHERE r.entite_id = $1
+              AND m.famille_id = $2
+              AND r.mois = $3
+              AND r.annee = $4
+        `, [reportUser.id, fId, periodM, periodA]),
+        neonQuery(`
+            SELECT
+                ri.indicateur_id,
+                ri.val_unique,
+                ri.val_nouvelle,
+                ri.val_ancienne
+            FROM rapports r
+            JOIN rapport_indicateurs ri ON ri.rapport_id = r.id
+            JOIN indicateurs i ON i.id = ri.indicateur_id
+            WHERE r.entite_id = $1
+              AND i.famille_id = $2
+              AND (r.famille_id = $2 OR r.famille_id IS NULL)
+              AND r.mois = $3
+              AND r.annee = $4
+        `, [reportUser.id, fId, periodM, periodA]),
+        // Livraisons du mois en cours pour ce centre
+        neonQuery(`
+            SELECT code_med, SUM(quantite_livree) as total_livre
+            FROM livraisons_district
+            WHERE code_structure = $1
+              AND mois::text = $2
+              AND annee::text = $3
+            GROUP BY code_med
+        `, [reportUser.code_structure, periodM, periodA]),
+        neonQuery(`
+            SELECT id, statut, date_soumission
+            FROM rapports
+            WHERE entite_id = $1
+              AND (famille_id = $2 OR famille_id IS NULL)
+              AND mois = $3
+              AND annee = $4
+            ORDER BY famille_id NULLS LAST, id DESC
+            LIMIT 1
+        `, [reportUser.id, fId, periodM, periodA])
+    ]);
+
+    loader(false);
+
+    currentReportStatus = rapportMeta[0]?.statut || null;
+    const canPrint = isLockedReportStatus(currentReportStatus);
+    document.getElementById('print-btn').classList.toggle('no-disp', !canPrint);
+    document.getElementById('print-subtitle').innerText =
+        `${reportUser.nom_entite} - ${fNom} - Periode ${periodM}/${periodA}`;
+
+    document.getElementById('stock-title').innerText =
+        `1. Mouvements de Stocks - Stock initial = disponible M-1 (${previousPeriod.mois}/${previousPeriod.annee})`;
+
+    currentMeds   = meds;
+    currentIndics = indics;
+    currentIndicLinks = indicLinks;
+
+    // Map stock initial (dernier disponible connu par medicament_id)
+    const stockMap = {};
+    stockPrecedent.forEach(s => {
+        stockMap[s.medicament_id] = parseFloat(s.stock_disponible) || 0;
+    });
+
+    const currentStockMap = {};
+    rapportCourant.forEach(r => { currentStockMap[r.medicament_id] = r; });
+
+    const currentIndicMap = {};
+    indicateursCourants.forEach(r => { currentIndicMap[r.indicateur_id] = r; });
+
+    // Map livraisons (code_med -> total livre ce mois)
+    const livrMap = {};
+    livraisons.forEach(l => { livrMap[l.code_med] = parseFloat(l.total_livre) || 0; });
+
+    // Trouver la quantite livree d'un medicament via code1..code5
+    function getLivraison(m) {
+        for (const col of ['code1','code2','code3','code4','code5']) {
+            if (m[col] && livrMap[m[col]] !== undefined) return livrMap[m[col]];
+        }
+        return 0;
+    }
+
+    const hiddenMeds = [];
+
+    // Tableau stocks
+    document.getElementById('med-body').innerHTML = meds.length > 0
+        ? meds.map(m => {
+            const init  = stockMap[m.id] ?? 0;
+            const saved = currentStockMap[m.id];
+            const livre = saved ? parseFloat(saved.quantite_recue) || 0 : getLivraison(m);
+            const dist = saved ? parseFloat(saved.quantite_distribuee) || 0 : 0;
+            const pert = saved ? parseFloat(saved.pertes_ajustements) || 0 : 0;
+            const comment = saved?.commentaire || '';
+            const dispInit = saved ? parseFloat(saved.stock_disponible) || 0 : init + livre;
+            const visible = init > 0 || livre > 0 || saved || dist > 0 || pert !== 0;
+            if (!visible) hiddenMeds.push(m);
+            return `<tr id="row_${m.id}" style="${visible ? '' : 'display:none;'}">
+                <td align="left"><b>${m.dci}</b><br><small style="color:#7f8c8d;">${m.unite_comptage}</small></td>
+                <td class="st-init" id="st_${m.id}">${init}</td>
+                <td>
+                    <input type="number" class="input-saisie" id="rec_${m.id}" value="${livre}" min="0" oninput="calc(${m.id})">
+                    ${livre > 0 ? `<br><small style="color:#27ae60;font-size:9px;">${livre} livres</small>` : ''}
+                </td>
+                <td><input type="number" class="input-saisie" id="dist_${m.id}" value="${dist}" min="0" oninput="calc(${m.id})"></td>
+                <td><input type="number" class="input-saisie" id="pert_${m.id}" value="${pert}" oninput="calc(${m.id})"></td>
+                <td><input type="number" class="input-saisie" id="disp_${m.id}" value="${dispInit}" min="0" oninput="calc(${m.id})"></td>
+            </tr>
+            <tr id="row_comm_${m.id}" style="display:${visible && pert !== 0 ? 'table-row' : 'none'}; background:#fffde7;">
+                <td colspan="2" align="right" style="color:#f39c12; font-size:11px; font-weight:bold;">Justification :</td>
+                <td colspan="4"><input type="text" id="comment_${m.id}" value="${String(comment).replace(/"/g, '&quot;')}" placeholder="Justifier la perte ou l'ajustement" style="width:100%;"></td>
+            </tr>`;
+        }).join('')
+        : '<tr><td colspan="6" style="color:#aaa;">Aucun medicament pour ce programme</td></tr>';
+
+    const hiddenBox = document.getElementById('hidden-meds-box');
+    const hiddenSelect = document.getElementById('hidden-meds-select');
+    hiddenBox.classList.toggle('no-disp', hiddenMeds.length === 0 || currentReadOnly);
+    hiddenSelect.innerHTML = '<option value="">-- Choisir --</option>' +
+        hiddenMeds.map(m => `<option value="${m.id}">${m.dci}</option>`).join('');
+
+    // Tableau indicateurs: PHP = PNSME avec deux champs, autres programmes avec une valeur unique.
+    const hasPnsme = indics.some(i => i.est_pnsme);
+    document.getElementById('indic-head').innerHTML = hasPnsme
+        ? '<tr><th>Indicateur</th><th>NOUVELLE UTILISATRICE DE CETTE METHODE CE MOIS</th><th>ANCIENNE UTILISATRICE DE CETTE METHODE CE MOIS</th></tr>'
+        : '<tr><th>Indicateur</th><th colspan="2">Valeur apportee</th></tr>';
+
+    document.getElementById('indic-body').innerHTML = indics.length > 0
+        ? indics.map(i => {
+            const saved = currentIndicMap[i.id] || {};
+            const valU = parseFloat(saved.val_unique) || 0;
+            const valN = parseFloat(saved.val_nouvelle) || 0;
+            const valA = parseFloat(saved.val_ancienne) || 0;
+            const linked = isIndicatorLinked(i.id);
+            const hasSaved = valU > 0 || valN > 0 || valA > 0;
+            const cells = i.est_pnsme
+                ? `<td><input type="number" class="input-saisie" style="width:90px" id="ind_n_${i.id}" value="${valN}" min="0"></td>
+                   <td><input type="number" class="input-saisie" style="width:90px" id="ind_a_${i.id}" value="${valA}" min="0"></td>`
+                : `<td colspan="2"><input type="number" class="input-saisie" style="width:120px" id="ind_u_${i.id}" value="${valU}" min="0"></td>`;
+            return `
+            <tr id="indic_row_${i.id}" data-linked="${linked ? '1' : '0'}" style="${linked && !hasSaved ? 'display:none;' : ''}">
+                <td align="left">${i.nom_indicateur}</td>
+                ${cells}
+            </tr>`;
+        }).join('')
+        : '<tr><td colspan="4" style="color:#aaa;">Aucun indicateur pour ce programme</td></tr>';
+    updateIndicatorVisibility();
+    document.querySelectorAll('#saisie-zone input').forEach(input => { input.disabled = currentReadOnly; });
+}
+
+function isIndicatorLinked(indicateurId) {
+    return currentIndicLinks.some(link => Number(link.indicateur_id) === Number(indicateurId));
+}
+
+function revealMedication(id) {
+    if (!id) return;
+    const row = document.getElementById('row_' + id);
+    if (row) row.style.display = 'table-row';
+
+    const select = document.getElementById('hidden-meds-select');
+    const option = select?.querySelector(`option[value="${id}"]`);
+    if (option) option.remove();
+    if (select) select.value = '';
+
+    const hiddenBox = document.getElementById('hidden-meds-box');
+    if (select && select.options.length <= 1) hiddenBox.classList.add('no-disp');
+
+    calc(id);
+}
+
+function updateIndicatorVisibility() {
+    if (!currentIndics.length) return;
+
+    const distributedMedicaments = new Set(
+        currentMeds
+            .filter(m => (parseFloat(document.getElementById('dist_' + m.id)?.value) || 0) > 0)
+            .map(m => Number(m.id))
+    );
+    const activeIndicators = new Set();
+
+    currentIndicLinks.forEach(link => {
+        if (distributedMedicaments.has(Number(link.medicament_id))) {
+            activeIndicators.add(Number(link.indicateur_id));
+        }
+    });
+
+    currentIndics.forEach(i => {
+        const row = document.getElementById('indic_row_' + i.id);
+        if (!row) return;
+        const linked = row.dataset.linked === '1';
+        row.style.display = !linked || activeIndicators.has(Number(i.id)) ? '' : 'none';
+    });
+}
+
+// 5. Calcul validation stock
+function calc(id) {
+    const st   = parseFloat(document.getElementById('st_'   + id).innerText) || 0;
+    const rec  = parseFloat(document.getElementById('rec_'  + id).value)     || 0;
+    const dist = parseFloat(document.getElementById('dist_' + id).value)     || 0;
+    const pert = parseFloat(document.getElementById('pert_' + id).value)     || 0;
+    const disp = parseFloat(document.getElementById('disp_' + id).value)     || 0;
+    const commentRow = document.getElementById('row_comm_' + id);
+    if (commentRow) commentRow.style.display = pert !== 0 ? 'table-row' : 'none';
+    // Meme regle que le PHP : Init + Recu - Dist + Pert = Disponible.
+    const theorique = st + rec - dist + pert;
+    document.getElementById('row_' + id).classList.toggle('row-error', Math.round(theorique * 1000) !== Math.round(disp * 1000));
+    updateIndicatorVisibility();
+}
+
+function printCurrentReport() {
+    if (!isLockedReportStatus(currentReportStatus)) {
+        alert("Le bouton d'impression est disponible apres validation/transmission du rapport.");
+        return;
+    }
+    window.print();
+}
+
+// 6. Sauvegarde
+async function saveData() {
+    if (currentReadOnly) {
+        alert("Ce rapport est verrouille en consultation. Le district doit le reouvrir pour permettre une modification.");
+        return;
+    }
+
+    const errors = document.querySelectorAll('.row-error');
+    if (errors.length > 0) {
+        alert(`${errors.length} ligne(s) en erreur (fond rouge).\nVerifiez que : Stock Initial + Recu - Distribue - Pertes = Disponible`);
+        return;
+    }
+
+    for (const m of currentMeds) {
+        const row = document.getElementById('row_' + m.id);
+        if (row && row.style.display === 'none') continue;
+
+        const pert = parseFloat(document.getElementById('pert_' + m.id).value) || 0;
+        const comment = document.getElementById('comment_' + m.id)?.value.trim() || '';
+        if (pert !== 0 && !comment) {
+            alert("Veuillez justifier chaque perte/ajustement dans la ligne Justification.");
+            document.getElementById('comment_' + m.id)?.focus();
+            return;
+        }
+    }
+
+    const saveTarget = currentReportUser || user;
+    const saveM = currentReportM || currentM;
+    const saveA = currentReportA || currentA;
+    const question = isDistrict()
+        ? "Voulez-vous enregistrer cette correction District ?"
+        : "Voulez-vous envoyer ce rapport au district ?";
+    if (!confirm(question)) return;
+
+    loader(true);
+    try {
+        // 1. Creer ou mettre a jour l'entete du rapport
+        const rapRes = await neonQuery(`
+            INSERT INTO rapports (entite_id, famille_id, mois, annee, statut, date_soumission)
+            VALUES ($1, $2, $3, $4, 'TRANSMIS', NOW())
+            ON CONFLICT (entite_id, famille_id, mois, annee)
+            DO UPDATE SET statut = 'TRANSMIS', date_soumission = NOW()
+            RETURNING id
+        `, [saveTarget.id, currentFamilleId, saveM, saveA]);
+
+        if (!rapRes.length) throw new Error("Impossible de creer le rapport");
+        const rapportId = rapRes[0].id;
+
+        // 2. Supprimer anciens details stocks si re-saisie
+        await neonQuery("DELETE FROM rapport_stock_details WHERE rapport_id = $1", [rapportId]);
+
+        // 3. Inserer les lignes de stock
+        for (const m of currentMeds) {
+            const row = document.getElementById('row_' + m.id);
+            if (row && row.style.display === 'none') continue;
+
+            const st   = parseFloat(document.getElementById('st_'   + m.id).innerText) || 0;
+            const rec  = parseFloat(document.getElementById('rec_'  + m.id).value)     || 0;
+            const dist = parseFloat(document.getElementById('dist_' + m.id).value)     || 0;
+            const pert = parseFloat(document.getElementById('pert_' + m.id).value)     || 0;
+            const disp = parseFloat(document.getElementById('disp_' + m.id).value)     || 0;
+            const rawComment = document.getElementById('comment_' + m.id)?.value.trim() || null;
+            const comment = pert !== 0 ? rawComment : null;
+
+            await neonQuery(`
+                INSERT INTO rapport_stock_details
+                    (rapport_id, medicament_id, stock_initial, quantite_recue, quantite_distribuee, pertes_ajustements, stock_disponible, commentaire)
+                VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+            `, [rapportId, m.id, st, rec, dist, pert, disp, comment]);
+        }
+
+        // 4. Supprimer anciens indicateurs si re-saisie
+        await neonQuery("DELETE FROM rapport_indicateurs WHERE rapport_id = $1", [rapportId]);
+
+        // 5. Inserer les indicateurs
+        for (const i of currentIndics) {
+            const row = document.getElementById('indic_row_' + i.id);
+            if (row && row.style.display === 'none') continue;
+
+            const isPnsme = !!i.est_pnsme;
+            const vU = isPnsme ? 0 : (parseFloat(document.getElementById('ind_u_' + i.id)?.value) || 0);
+            const vN = isPnsme ? (parseFloat(document.getElementById('ind_n_' + i.id)?.value) || 0) : 0;
+            const vA = isPnsme ? (parseFloat(document.getElementById('ind_a_' + i.id)?.value) || 0) : 0;
+
+            await neonQuery(`
+                INSERT INTO rapport_indicateurs (rapport_id, indicateur_id, val_unique, val_nouvelle, val_ancienne)
+                VALUES ($1, $2, $3, $4, $5)
+            `, [rapportId, i.id, vU, vN, vA]);
+        }
+
+        loader(false);
+        alert(isDistrict() ? "Correction District enregistree avec succes !" : "Rapport transmis avec succes au District !");
+        showHome();
+
+    } catch(e) {
+        loader(false);
+        console.error(e);
+        alert("Erreur lors de l'envoi : " + e.message);
+    }
+}
+
+init();
+</script>
+</body>
+</html>
+
