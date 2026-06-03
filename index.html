@@ -70,7 +70,28 @@
         #loader { display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.4); z-index:999; align-items:center; justify-content:center; }
         #loader.active { display:flex; }
         .spinner { background:white; padding:30px 40px; border-radius:12px; text-align:center; font-size:16px; font-weight:bold; color:var(--primary); }
-        @media (max-width: 600px) { th, td { padding: 5px 2px; font-size: 10px; } .input-saisie { width: 45px; } }
+        @media (max-width: 760px) {
+            body { padding:0; font-size:12px; }
+            .container { width:100%; max-width:none; min-height:100vh; padding:10px; border-radius:0; box-shadow:none; }
+            .card { padding:16px; border-radius:8px; }
+            .banner { align-items:flex-start; gap:10px; padding:12px; }
+            .banner b { font-size:15px !important; }
+            .logout-btn { flex:0 0 auto; }
+            .district-menu { display:grid; grid-template-columns:1fr; gap:8px; }
+            .district-menu button, button, .btn-small { width:100%; padding:10px 12px; }
+            .district-filters { display:block; }
+            .district-filters label { min-width:0; display:block; }
+            h3 { font-size:17px; }
+            h4 { font-size:14px; }
+            table { min-width:720px; }
+            #agent-home, #district-reports-view, #saisie-zone > div, .dashboard-wrap { overflow-x:auto; -webkit-overflow-scrolling:touch; }
+            th, td { padding:6px 4px; font-size:10px; }
+            .input-saisie { width:58px; font-size:11px; padding:5px 3px; }
+            #indic-head th { min-width:120px; }
+            #indic-head th:first-child { min-width:220px; }
+            .dash-button { min-width:62px; padding:7px 6px; }
+            .dashboard-table { min-width:1000px; }
+        }
     </style>
 </head>
 <body>
@@ -253,7 +274,7 @@ let currentFamilleId = null, currentFamilleNom = null;
 let currentMeds = [], currentIndics = [], currentIndicLinks = [];
 let currentReadOnly = false, currentReportStatus = null, districtSelectedEntite = null;
 let currentReportUser = null, currentReportM = null, currentReportA = null;
-let districtEspcs = [];
+let districtEspcs = [], districtReturnEspcId = null;
 
 // 1. Initialisation
 async function init() {
@@ -411,7 +432,7 @@ async function viewAscReport(entiteId, familleId, title, mois, annee) {
     districtSelectedEntite = previous;
 }
 
-async function showDistrictHome() {
+async function showDistrictHome(options = {}) {
     districtSelectedEntite = null;
     document.getElementById('agent-home').classList.add('no-disp');
     document.getElementById('saisie-zone').classList.add('no-disp');
@@ -433,8 +454,13 @@ async function showDistrictHome() {
     }
 
     const espcSel = document.getElementById('district-espc');
+    const keepEspc = options.keepEspcId || districtReturnEspcId || espcSel.value || '';
     espcSel.innerHTML = '<option value="">-- Tous les ESPC --</option>' +
         districtEspcs.map(e => `<option value="${e.id}">${e.nom_entite}</option>`).join('');
+    if (keepEspc && districtEspcs.some(e => Number(e.id) === Number(keepEspc))) {
+        espcSel.value = String(keepEspc);
+    }
+    districtReturnEspcId = null;
 
     fillDistrictPeriodSelect('district-period');
     fillDistrictPeriodSelect('dashboard-period');
@@ -444,6 +470,12 @@ async function showDistrictHome() {
         listFamilles.map(f => `<option value="${f.id}">${f.nom_famille}</option>`).join('');
     document.getElementById('district-body').innerHTML = '<tr><td colspan="4">Choisissez un programme pour afficher les rapports.</td></tr>';
     await loadDistrictDashboard();
+    if (options.view === 'rapports') {
+        showDistrictReportsView();
+        if (document.getElementById('district-programme').value) {
+            await loadDistrictReports();
+        }
+    }
 }
 
 function fillDistrictPeriodSelect(selectId) {
@@ -584,8 +616,15 @@ async function showDashboardMissing(entiteId, familleId, title, mois, annee) {
         livraisons_m AS (
             SELECT m.id AS medicament_id, SUM(COALESCE(ld.quantite_livree, 0)) AS total_livre
             FROM target t
-            JOIN livraisons_district ld ON ld.code_structure = t.code_structure
-            JOIN medicaments m ON ld.code_med IN (m.code1, m.code2, m.code3, m.code4, m.code5)
+            JOIN livraisons_district ld ON upper(trim(ld.code_structure)) = upper(trim(t.code_structure))
+            JOIN medicaments m
+              ON replace(upper(trim(ld.code_med)), '_', '-') IN (
+                  replace(upper(trim(m.code1)), '_', '-'),
+                  replace(upper(trim(m.code2)), '_', '-'),
+                  replace(upper(trim(m.code3)), '_', '-'),
+                  replace(upper(trim(m.code4)), '_', '-'),
+                  replace(upper(trim(m.code5)), '_', '-')
+              )
             WHERE ld.mois::text = $3::text
               AND ld.annee::text = $4::text
               AND m.famille_id = $2
@@ -594,8 +633,15 @@ async function showDashboardMissing(entiteId, familleId, title, mois, annee) {
         livraisons_m1 AS (
             SELECT m.id AS medicament_id, SUM(COALESCE(ld.quantite_livree, 0)) AS total_livre
             FROM target t
-            JOIN livraisons_district ld ON ld.code_structure = t.code_structure
-            JOIN medicaments m ON ld.code_med IN (m.code1, m.code2, m.code3, m.code4, m.code5)
+            JOIN livraisons_district ld ON upper(trim(ld.code_structure)) = upper(trim(t.code_structure))
+            JOIN medicaments m
+              ON replace(upper(trim(ld.code_med)), '_', '-') IN (
+                  replace(upper(trim(m.code1)), '_', '-'),
+                  replace(upper(trim(m.code2)), '_', '-'),
+                  replace(upper(trim(m.code3)), '_', '-'),
+                  replace(upper(trim(m.code4)), '_', '-'),
+                  replace(upper(trim(m.code5)), '_', '-')
+              )
             WHERE ld.mois::text = $5::text
               AND ld.annee::text = $6::text
               AND m.famille_id = $2
@@ -707,7 +753,13 @@ async function loadDistrictDashboard() {
                     SUM(COALESCE(ld.quantite_livree, 0)) AS total_livre
                 FROM livraisons_district ld
                 JOIN medicaments m
-                  ON ld.code_med IN (m.code1, m.code2, m.code3, m.code4, m.code5)
+                  ON replace(upper(trim(ld.code_med)), '_', '-') IN (
+                      replace(upper(trim(m.code1)), '_', '-'),
+                      replace(upper(trim(m.code2)), '_', '-'),
+                      replace(upper(trim(m.code3)), '_', '-'),
+                      replace(upper(trim(m.code4)), '_', '-'),
+                      replace(upper(trim(m.code5)), '_', '-')
+                  )
                 WHERE ld.mois::text = $1::text
                   AND ld.annee::text = $2::text
                 GROUP BY ld.code_structure, m.id
@@ -719,7 +771,13 @@ async function loadDistrictDashboard() {
                     SUM(COALESCE(ld.quantite_livree, 0)) AS total_livre
                 FROM livraisons_district ld
                 JOIN medicaments m
-                  ON ld.code_med IN (m.code1, m.code2, m.code3, m.code4, m.code5)
+                  ON replace(upper(trim(ld.code_med)), '_', '-') IN (
+                      replace(upper(trim(m.code1)), '_', '-'),
+                      replace(upper(trim(m.code2)), '_', '-'),
+                      replace(upper(trim(m.code3)), '_', '-'),
+                      replace(upper(trim(m.code4)), '_', '-'),
+                      replace(upper(trim(m.code5)), '_', '-')
+                  )
                 WHERE ld.mois::text = $3::text
                   AND ld.annee::text = $4::text
                 GROUP BY ld.code_structure, m.id
@@ -867,6 +925,12 @@ async function loadDistrictReports() {
             FROM espc e
             JOIN agents_asc a ON a.code_espc = e.code_structure
             JOIN entites ae ON ae.code_structure = a.code_asc
+            WHERE EXISTS (
+                SELECT 1
+                FROM familles fp
+                WHERE fp.id = $1::integer
+                  AND fp.est_pnlp = TRUE
+            )
         ),
         latest_reports AS (
             SELECT DISTINCT ON (v.entite_id)
@@ -1046,15 +1110,27 @@ async function startSaisie(fId, fNom, readOnly = false, targetPeriod = null) {
               AND r.mois = $3
               AND r.annee = $4
         `, [reportUser.id, fId, periodM, periodA]),
-        // Livraisons du mois en cours pour ce centre
+        // Livraisons du mois en cours pour ce centre.
+        // Correspondance tolerante: casse, espaces, tiret/underscore dans les codes produits.
         neonQuery(`
-            SELECT code_med, SUM(quantite_livree) as total_livre
-            FROM livraisons_district
-            WHERE code_structure = $1
-              AND mois::text = $2
-              AND annee::text = $3
-            GROUP BY code_med
-        `, [reportUser.code_structure, periodM, periodA]),
+            SELECT
+                m.id AS medicament_id,
+                SUM(COALESCE(ld.quantite_livree, 0)) AS total_livre
+            FROM livraisons_district ld
+            JOIN medicaments m
+              ON replace(upper(trim(ld.code_med)), '_', '-') IN (
+                  replace(upper(trim(m.code1)), '_', '-'),
+                  replace(upper(trim(m.code2)), '_', '-'),
+                  replace(upper(trim(m.code3)), '_', '-'),
+                  replace(upper(trim(m.code4)), '_', '-'),
+                  replace(upper(trim(m.code5)), '_', '-')
+              )
+            WHERE upper(trim(ld.code_structure)) = upper(trim($1))
+              AND ld.mois::text = $2::text
+              AND ld.annee::text = $3::text
+              AND m.famille_id = $4
+            GROUP BY m.id
+        `, [reportUser.code_structure, periodM, periodA, fId]),
         neonQuery(`
             SELECT id, statut, date_soumission
             FROM rapports
@@ -1094,16 +1170,12 @@ async function startSaisie(fId, fNom, readOnly = false, targetPeriod = null) {
     const currentIndicMap = {};
     indicateursCourants.forEach(r => { currentIndicMap[r.indicateur_id] = r; });
 
-    // Map livraisons (code_med -> total livre ce mois)
+    // Map livraisons (medicament_id -> total livre ce mois)
     const livrMap = {};
-    livraisons.forEach(l => { livrMap[l.code_med] = parseFloat(l.total_livre) || 0; });
+    livraisons.forEach(l => { livrMap[l.medicament_id] = parseFloat(l.total_livre) || 0; });
 
-    // Trouver la quantite livree d'un medicament via code1..code5
     function getLivraison(m) {
-        for (const col of ['code1','code2','code3','code4','code5']) {
-            if (m[col] && livrMap[m[col]] !== undefined) return livrMap[m[col]];
-        }
-        return 0;
+        return livrMap[m.id] || 0;
     }
 
     const hiddenMeds = [];
@@ -1332,7 +1404,12 @@ async function saveData() {
 
         loader(false);
         alert(isDistrict() ? "Correction District enregistree avec succes !" : "Rapport transmis avec succes au District !");
-        showHome();
+        if (isDistrict()) {
+            districtReturnEspcId = saveTarget.id;
+            await showDistrictHome({ view: 'rapports', keepEspcId: saveTarget.id });
+        } else {
+            showHome();
+        }
 
     } catch(e) {
         loader(false);
