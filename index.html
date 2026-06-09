@@ -84,7 +84,7 @@
             h3 { font-size:17px; }
             h4 { font-size:14px; }
             table { min-width:720px; }
-            #agent-home, #district-reports-view, #saisie-zone > div, .dashboard-wrap { overflow-x:auto; -webkit-overflow-scrolling:touch; }
+            #agent-home, #district-reports-view, #district-bilan-view, #saisie-zone > div, .dashboard-wrap { overflow-x:auto; -webkit-overflow-scrolling:touch; }
             th, td { padding:6px 4px; font-size:10px; }
             .input-saisie { width:58px; font-size:11px; padding:5px 3px; }
             #indic-head th { min-width:120px; }
@@ -137,6 +137,7 @@
             <div class="district-menu">
                 <button id="district-tab-dashboard" class="active" onclick="showDistrictDashboard()">Tableau de bord</button>
                 <button id="district-tab-rapports" onclick="showDistrictReportsView()">Rapports</button>
+                <button id="district-tab-bilan" onclick="showDistrictBilanView()">Bilan</button>
                 <button id="district-tab-passwords" onclick="showPasswordManager()">Mots de passe</button>
             </div>
 
@@ -172,6 +173,32 @@
                     <thead><tr><th>ESPC</th><th>Statut</th><th>Date</th><th>Action</th></tr></thead>
                     <tbody id="district-body"></tbody>
                 </table>
+            </div>
+
+            <div id="district-bilan-view" class="no-disp">
+                <div class="district-filters">
+                    <label><b>PERIODE :</b><select id="bilan-period" onchange="loadDistrictBilan()"></select></label>
+                    <label><b>PROGRAMME :</b><select id="bilan-programme" onchange="loadBilanMedicaments()"></select></label>
+                    <label><b>MEDICAMENT :</b><select id="bilan-medicament" onchange="loadDistrictBilan()"><option value="">-- Choisir un programme --</option></select></label>
+                    <button class="btn-small" style="background:var(--accent);" onclick="loadDistrictBilan()">Actualiser</button>
+                </div>
+                <div class="dashboard-wrap">
+                    <table class="dashboard-table">
+                        <thead>
+                            <tr>
+                                <th>Medicament</th>
+                                <th>Unite</th>
+                                <th>Stock initial</th>
+                                <th>Stock recu</th>
+                                <th>Stock distribue</th>
+                                <th>Pertes negatives</th>
+                                <th>Pertes positives</th>
+                                <th>Stock disponible</th>
+                            </tr>
+                        </thead>
+                        <tbody id="bilan-body"></tbody>
+                    </table>
+                </div>
             </div>
 
             <div id="district-passwords-view" class="no-disp">
@@ -464,11 +491,16 @@ async function showDistrictHome(options = {}) {
 
     fillDistrictPeriodSelect('district-period');
     fillDistrictPeriodSelect('dashboard-period');
+    fillDistrictPeriodSelect('bilan-period');
 
     const sel = document.getElementById('district-programme');
     sel.innerHTML = '<option value="">-- Choisissez un programme --</option>' +
         listFamilles.map(f => `<option value="${f.id}">${f.nom_famille}</option>`).join('');
+    const bilanProg = document.getElementById('bilan-programme');
+    bilanProg.innerHTML = '<option value="">-- Choisissez un programme --</option>' +
+        listFamilles.map(f => `<option value="${f.id}">${f.nom_famille}</option>`).join('');
     document.getElementById('district-body').innerHTML = '<tr><td colspan="4">Choisissez un programme pour afficher les rapports.</td></tr>';
+    document.getElementById('bilan-body').innerHTML = '<tr><td colspan="8">Choisissez un programme pour afficher le bilan.</td></tr>';
     await loadDistrictDashboard();
     if (options.view === 'rapports') {
         showDistrictReportsView();
@@ -498,9 +530,11 @@ function fillDistrictPeriodSelect(selectId) {
 function setDistrictTab(tab) {
     document.getElementById('district-tab-dashboard').classList.toggle('active', tab === 'dashboard');
     document.getElementById('district-tab-rapports').classList.toggle('active', tab === 'rapports');
+    document.getElementById('district-tab-bilan').classList.toggle('active', tab === 'bilan');
     document.getElementById('district-tab-passwords').classList.toggle('active', tab === 'passwords');
     document.getElementById('district-dashboard-view').classList.toggle('no-disp', tab !== 'dashboard');
     document.getElementById('district-reports-view').classList.toggle('no-disp', tab !== 'rapports');
+    document.getElementById('district-bilan-view').classList.toggle('no-disp', tab !== 'bilan');
     document.getElementById('district-passwords-view').classList.toggle('no-disp', tab !== 'passwords');
 }
 
@@ -512,6 +546,151 @@ async function showDistrictDashboard() {
 
 function showDistrictReportsView() {
     setDistrictTab('rapports');
+}
+
+async function showDistrictBilanView() {
+    setDistrictTab('bilan');
+    fillDistrictPeriodSelect('bilan-period');
+    if (!document.getElementById('bilan-programme').innerHTML.trim()) {
+        document.getElementById('bilan-programme').innerHTML = '<option value="">-- Choisissez un programme --</option>' +
+            listFamilles.map(f => `<option value="${f.id}">${f.nom_famille}</option>`).join('');
+    }
+    if (document.getElementById('bilan-programme').value) {
+        await loadDistrictBilan();
+    }
+}
+
+async function loadBilanMedicaments() {
+    const familleId = document.getElementById('bilan-programme').value;
+    const medSel = document.getElementById('bilan-medicament');
+    if (!familleId) {
+        medSel.innerHTML = '<option value="">-- Choisir un programme --</option>';
+        document.getElementById('bilan-body').innerHTML = '<tr><td colspan="8">Choisissez un programme pour afficher le bilan.</td></tr>';
+        return;
+    }
+    loader(true);
+    const meds = await neonQuery(`
+        SELECT id, dci, unite_comptage
+        FROM medicaments
+        WHERE famille_id = $1
+        ORDER BY dci
+    `, [familleId]);
+    loader(false);
+    medSel.innerHTML = '<option value="">-- Tous les medicaments du programme --</option>' +
+        meds.map(m => `<option value="${m.id}">${htmlEscape(m.dci)}${m.unite_comptage ? ' - ' + htmlEscape(m.unite_comptage) : ''}</option>`).join('');
+    await loadDistrictBilan();
+}
+
+function formatBilanNumber(value) {
+    const n = Number(value) || 0;
+    return Number.isInteger(n) ? String(n) : n.toFixed(2);
+}
+
+async function loadDistrictBilan() {
+    const familleId = document.getElementById('bilan-programme').value;
+    const medicamentId = document.getElementById('bilan-medicament').value || null;
+    const periodValue = document.getElementById('bilan-period')?.value || (currentM + '/' + currentA);
+    const [selectedM, selectedA] = periodValue.split('/').map(Number);
+    const body = document.getElementById('bilan-body');
+    if (!familleId) {
+        body.innerHTML = '<tr><td colspan="8">Choisissez un programme pour afficher le bilan.</td></tr>';
+        return;
+    }
+
+    loader(true);
+    const rows = await neonQuery(`
+        WITH espc AS (
+            SELECT id, nom_entite, code_structure
+            FROM entites e
+            WHERE e.role = 'USER'
+              AND NOT EXISTS (
+                  SELECT 1
+                  FROM agents_asc a
+                  WHERE a.code_asc = e.code_structure OR e.nom_entite ILIKE 'ASC:%'
+              )
+        ),
+        visible_entities AS (
+            SELECT id AS entite_id
+            FROM espc
+            UNION ALL
+            SELECT ae.id AS entite_id
+            FROM espc e
+            JOIN agents_asc a ON a.code_espc = e.code_structure
+            JOIN entites ae ON ae.code_structure = a.code_asc
+            WHERE EXISTS (
+                SELECT 1
+                FROM familles fp
+                WHERE fp.id = $1::integer
+                  AND fp.est_pnlp = TRUE
+            )
+        ),
+        details AS (
+            SELECT
+                rsd.medicament_id,
+                SUM(COALESCE(rsd.stock_initial, 0)) AS stock_initial,
+                SUM(COALESCE(rsd.quantite_recue, 0)) AS quantite_recue,
+                SUM(COALESCE(rsd.quantite_distribuee, 0)) AS quantite_distribuee,
+                SUM(CASE WHEN COALESCE(rsd.pertes_ajustements, 0) < 0 THEN COALESCE(rsd.pertes_ajustements, 0) ELSE 0 END) AS pertes_negatives,
+                SUM(CASE WHEN COALESCE(rsd.pertes_ajustements, 0) > 0 THEN COALESCE(rsd.pertes_ajustements, 0) ELSE 0 END) AS pertes_positives,
+                SUM(COALESCE(rsd.stock_disponible, 0)) AS stock_disponible
+            FROM rapports r
+            JOIN visible_entities ve ON ve.entite_id = r.entite_id
+            JOIN rapport_stock_details rsd ON rsd.rapport_id = r.id
+            JOIN medicaments md ON md.id = rsd.medicament_id
+            WHERE r.mois = $2::integer
+              AND r.annee = $3::integer
+              AND md.famille_id = $1::integer
+              AND (r.famille_id = $1::integer OR r.famille_id IS NULL)
+            GROUP BY rsd.medicament_id
+        )
+        SELECT
+            m.id,
+            m.dci,
+            m.unite_comptage,
+            COALESCE(d.stock_initial, 0) AS stock_initial,
+            COALESCE(d.quantite_recue, 0) AS quantite_recue,
+            COALESCE(d.quantite_distribuee, 0) AS quantite_distribuee,
+            COALESCE(d.pertes_negatives, 0) AS pertes_negatives,
+            COALESCE(d.pertes_positives, 0) AS pertes_positives,
+            COALESCE(d.stock_disponible, 0) AS stock_disponible
+        FROM medicaments m
+        LEFT JOIN details d ON d.medicament_id = m.id
+        WHERE m.famille_id = $1::integer
+          AND ($4::integer IS NULL OR m.id = $4::integer)
+        ORDER BY m.dci
+    `, [familleId, selectedM, selectedA, medicamentId]);
+    loader(false);
+
+    const totals = rows.reduce((acc, r) => {
+        ['stock_initial','quantite_recue','quantite_distribuee','pertes_negatives','pertes_positives','stock_disponible'].forEach(k => {
+            acc[k] += Number(r[k]) || 0;
+        });
+        return acc;
+    }, { stock_initial:0, quantite_recue:0, quantite_distribuee:0, pertes_negatives:0, pertes_positives:0, stock_disponible:0 });
+
+    const rowsHtml = rows.map(r => `<tr>
+        <td align="left"><b>${htmlEscape(r.dci)}</b></td>
+        <td>${htmlEscape(r.unite_comptage || '')}</td>
+        <td>${formatBilanNumber(r.stock_initial)}</td>
+        <td>${formatBilanNumber(r.quantite_recue)}</td>
+        <td>${formatBilanNumber(r.quantite_distribuee)}</td>
+        <td>${formatBilanNumber(r.pertes_negatives)}</td>
+        <td>${formatBilanNumber(r.pertes_positives)}</td>
+        <td>${formatBilanNumber(r.stock_disponible)}</td>
+    </tr>`).join('');
+
+    const totalRow = rows.length ? `<tr style="font-weight:bold;background:#eef5ff;">
+        <td align="left">TOTAL</td>
+        <td></td>
+        <td>${formatBilanNumber(totals.stock_initial)}</td>
+        <td>${formatBilanNumber(totals.quantite_recue)}</td>
+        <td>${formatBilanNumber(totals.quantite_distribuee)}</td>
+        <td>${formatBilanNumber(totals.pertes_negatives)}</td>
+        <td>${formatBilanNumber(totals.pertes_positives)}</td>
+        <td>${formatBilanNumber(totals.stock_disponible)}</td>
+    </tr>` : '';
+
+    body.innerHTML = rowsHtml + totalRow || '<tr><td colspan="8">Aucun medicament trouve pour ce programme.</td></tr>';
 }
 
 async function showPasswordManager() {
