@@ -183,6 +183,7 @@
                     <button class="btn-small" style="background:var(--accent);" onclick="loadDistrictBilan()">Actualiser</button>
                 </div>
                 <div class="dashboard-wrap">
+                    <h4>Bilan des medicaments</h4>
                     <table class="dashboard-table">
                         <thead>
                             <tr>
@@ -197,6 +198,15 @@
                             </tr>
                         </thead>
                         <tbody id="bilan-body"></tbody>
+                    </table>
+                </div>
+                <div class="dashboard-wrap">
+                    <h4>Bilan des indicateurs lies au programme</h4>
+                    <table class="dashboard-table">
+                        <thead id="bilan-indic-head">
+                            <tr><th>Indicateur</th><th>Valeur</th></tr>
+                        </thead>
+                        <tbody id="bilan-indic-body"></tbody>
                     </table>
                 </div>
             </div>
@@ -501,6 +511,8 @@ async function showDistrictHome(options = {}) {
         listFamilles.map(f => `<option value="${f.id}">${f.nom_famille}</option>`).join('');
     document.getElementById('district-body').innerHTML = '<tr><td colspan="4">Choisissez un programme pour afficher les rapports.</td></tr>';
     document.getElementById('bilan-body').innerHTML = '<tr><td colspan="8">Choisissez un programme pour afficher le bilan.</td></tr>';
+    document.getElementById('bilan-indic-head').innerHTML = '<tr><th>Indicateur</th><th>Valeur</th></tr>';
+    document.getElementById('bilan-indic-body').innerHTML = '<tr><td colspan="2">Choisissez un programme pour afficher le bilan des indicateurs.</td></tr>';
     await loadDistrictDashboard();
     if (options.view === 'rapports') {
         showDistrictReportsView();
@@ -566,6 +578,8 @@ async function loadBilanMedicaments() {
     if (!familleId) {
         medSel.innerHTML = '<option value="">-- Choisir un programme --</option>';
         document.getElementById('bilan-body').innerHTML = '<tr><td colspan="8">Choisissez un programme pour afficher le bilan.</td></tr>';
+        document.getElementById('bilan-indic-head').innerHTML = '<tr><th>Indicateur</th><th>Valeur</th></tr>';
+        document.getElementById('bilan-indic-body').innerHTML = '<tr><td colspan="2">Choisissez un programme pour afficher le bilan des indicateurs.</td></tr>';
         return;
     }
     loader(true);
@@ -592,13 +606,18 @@ async function loadDistrictBilan() {
     const periodValue = document.getElementById('bilan-period')?.value || (currentM + '/' + currentA);
     const [selectedM, selectedA] = periodValue.split('/').map(Number);
     const body = document.getElementById('bilan-body');
+    const indicHead = document.getElementById('bilan-indic-head');
+    const indicBody = document.getElementById('bilan-indic-body');
     if (!familleId) {
         body.innerHTML = '<tr><td colspan="8">Choisissez un programme pour afficher le bilan.</td></tr>';
+        indicHead.innerHTML = '<tr><th>Indicateur</th><th>Valeur</th></tr>';
+        indicBody.innerHTML = '<tr><td colspan="2">Choisissez un programme pour afficher le bilan des indicateurs.</td></tr>';
         return;
     }
 
     loader(true);
-    const rows = await neonQuery(`
+    const [rows, indicatorRows] = await Promise.all([
+        neonQuery(`
         WITH espc AS (
             SELECT id, nom_entite, code_structure
             FROM entites e
@@ -658,7 +677,62 @@ async function loadDistrictBilan() {
         WHERE m.famille_id = $1::integer
           AND ($4::integer IS NULL OR m.id = $4::integer)
         ORDER BY m.dci
-    `, [familleId, selectedM, selectedA, medicamentId]);
+    `, [familleId, selectedM, selectedA, medicamentId]),
+        neonQuery(`
+        WITH espc AS (
+            SELECT id, nom_entite, code_structure
+            FROM entites e
+            WHERE e.role = 'USER'
+              AND NOT EXISTS (
+                  SELECT 1
+                  FROM agents_asc a
+                  WHERE a.code_asc = e.code_structure OR e.nom_entite ILIKE 'ASC:%'
+              )
+        ),
+        visible_entities AS (
+            SELECT id AS entite_id
+            FROM espc
+            UNION ALL
+            SELECT ae.id AS entite_id
+            FROM espc e
+            JOIN agents_asc a ON a.code_espc = e.code_structure
+            JOIN entites ae ON ae.code_structure = a.code_asc
+            WHERE EXISTS (
+                SELECT 1
+                FROM familles fp
+                WHERE fp.id = $1::integer
+                  AND fp.est_pnlp = TRUE
+            )
+        ),
+        details AS (
+            SELECT
+                ri.indicateur_id,
+                SUM(COALESCE(ri.val_unique, 0)) AS val_unique,
+                SUM(COALESCE(ri.val_nouvelle, 0)) AS val_nouvelle,
+                SUM(COALESCE(ri.val_ancienne, 0)) AS val_ancienne
+            FROM rapports r
+            JOIN visible_entities ve ON ve.entite_id = r.entite_id
+            JOIN rapport_indicateurs ri ON ri.rapport_id = r.id
+            JOIN indicateurs i ON i.id = ri.indicateur_id
+            WHERE r.mois = $2::integer
+              AND r.annee = $3::integer
+              AND i.famille_id = $1::integer
+              AND (r.famille_id = $1::integer OR r.famille_id IS NULL)
+            GROUP BY ri.indicateur_id
+        )
+        SELECT
+            i.id,
+            i.nom_indicateur,
+            i.est_pnsme,
+            COALESCE(d.val_unique, 0) AS val_unique,
+            COALESCE(d.val_nouvelle, 0) AS val_nouvelle,
+            COALESCE(d.val_ancienne, 0) AS val_ancienne
+        FROM indicateurs i
+        LEFT JOIN details d ON d.indicateur_id = i.id
+        WHERE i.famille_id = $1::integer
+        ORDER BY i.id
+    `, [familleId, selectedM, selectedA])
+    ]);
     loader(false);
 
     const totals = rows.reduce((acc, r) => {
@@ -691,6 +765,31 @@ async function loadDistrictBilan() {
     </tr>` : '';
 
     body.innerHTML = rowsHtml + totalRow || '<tr><td colspan="8">Aucun medicament trouve pour ce programme.</td></tr>';
+
+    const hasPnsmeIndicators = indicatorRows.some(i => i.est_pnsme);
+    indicHead.innerHTML = hasPnsmeIndicators
+        ? '<tr><th>Indicateur</th><th>Nouvelle utilisatrice</th><th>Ancienne utilisatrice</th><th>Total</th></tr>'
+        : '<tr><th>Indicateur</th><th>Valeur</th></tr>';
+
+    indicBody.innerHTML = indicatorRows.length
+        ? indicatorRows.map(i => {
+            const valUnique = Number(i.val_unique) || 0;
+            const valNouvelle = Number(i.val_nouvelle) || 0;
+            const valAncienne = Number(i.val_ancienne) || 0;
+            if (hasPnsmeIndicators) {
+                return `<tr>
+                    <td align="left"><b>${htmlEscape(i.nom_indicateur)}</b></td>
+                    <td>${formatBilanNumber(i.est_pnsme ? valNouvelle : 0)}</td>
+                    <td>${formatBilanNumber(i.est_pnsme ? valAncienne : 0)}</td>
+                    <td>${formatBilanNumber(i.est_pnsme ? valNouvelle + valAncienne : valUnique)}</td>
+                </tr>`;
+            }
+            return `<tr>
+                <td align="left"><b>${htmlEscape(i.nom_indicateur)}</b></td>
+                <td>${formatBilanNumber(valUnique)}</td>
+            </tr>`;
+        }).join('')
+        : `<tr><td colspan="${hasPnsmeIndicators ? 4 : 2}">Aucun indicateur trouve pour ce programme.</td></tr>`;
 }
 
 async function showPasswordManager() {
