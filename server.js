@@ -72,7 +72,7 @@ async function getActivePeriod() {
 const NEON_COLUMNS = {
     entites: ['id', 'nom_entite', 'login', 'role', 'code_structure', 'mot_de_passe'],
     familles: ['id', 'nom_famille', 'est_pnlp'],
-    medicaments: ['id', 'famille_id', 'dci', 'unite_comptage', 'code1', 'code2', 'code3', 'code4', 'code5', 'cmm_theorique'],
+    medicaments: ['id', 'famille_id', 'dci', 'unite_comptage', 'conditionnement_qte', 'conditionnement_libelle', 'code1', 'code2', 'code3', 'code4', 'code5', 'cmm_theorique'],
     indicateurs: ['id', 'nom_indicateur', 'famille_id', 'est_pnsme', 'type_saisie'],
     indicateur_meds: ['indicateur_id', 'medicament_id'],
     agents_asc: ['code_asc', 'code_espc', 'libelle'],
@@ -81,13 +81,17 @@ const NEON_COLUMNS = {
     rapports: ['id', 'entite_id', 'mois', 'annee', 'statut', 'famille_id', 'date_soumission'],
     rapport_stock_details: ['id', 'rapport_id', 'medicament_id', 'stock_initial', 'quantite_recue', 'quantite_distribuee', 'pertes_ajustements', 'stock_disponible', 'commentaire'],
     rapport_indicateurs: ['id', 'rapport_id', 'indicateur_id', 'val_unique', 'val_nouvelle', 'val_ancienne'],
-    livraisons_district: ['id', 'code_structure', 'code_med', 'quantite_livree', 'mois', 'annee', 'num_facture', 'date_livraison']
+    livraisons_district: ['id', 'code_structure', 'code_med', 'quantite_livree', 'mois', 'annee', 'num_facture', 'date_livraison', 'type_livraison', 'reference_livraison'],
+    livraisons_urgentes: ['id', 'code_structure', 'code_med', 'medicament_id', 'quantite_livree', 'mois', 'annee', 'num_facture', 'date_livraison', 'motif', 'reference_livraison', 'created_at']
 };
 
 function normalizeRecord(table, record) {
     const normalized = { ...record };
     if (table === 'rapports' && normalized.date_saisie && !normalized.date_soumission) {
         normalized.date_soumission = normalized.date_saisie;
+    }
+    if (table === 'livraisons_urgentes' && !normalized.reference_livraison) {
+        normalized.reference_livraison = normalized.num_facture || 'URGENCE';
     }
     delete normalized.date_saisie;
 
@@ -102,6 +106,7 @@ function conflictColumns(table, record) {
     if (table === 'parametres') return ['cle'];
     if (table === 'agents_asc') return ['code_asc'];
     if (table === 'indicateur_meds') return ['indicateur_id', 'medicament_id'];
+    if (table === 'livraisons_urgentes') return ['code_structure', 'code_med', 'mois', 'annee', 'reference_livraison'];
     if (record.id !== undefined && record.id !== null && record.id !== '') return ['id'];
     if (table === 'rapports') return ['entite_id', 'mois', 'annee', 'famille_id'];
     if (table === 'rapport_stock_details') return ['rapport_id', 'medicament_id'];
@@ -423,6 +428,73 @@ app.get('/api/sync/export-retours', async (req, res) => {
         });
     } catch (err) {
         res.status(500).json({ ok: false, error: err.message });
+    }
+});
+
+
+// Prepare les parametres d'allocation sans casser les anciennes donnees.
+// - conditionnement par defaut: 1 + unite_comptage
+// - livraisons urgentes separees des livraisons mensuelles de rapportage
+app.post('/api/admin/setup-allocation-params', async (_req, res) => {
+    const client = await pool.connect();
+    try {
+        await client.query('BEGIN');
+        await client.query(`
+            ALTER TABLE medicaments
+              ADD COLUMN IF NOT EXISTS conditionnement_qte NUMERIC DEFAULT 1,
+              ADD COLUMN IF NOT EXISTS conditionnement_libelle TEXT
+        `);
+        await client.query(`
+            UPDATE medicaments
+            SET conditionnement_qte = COALESCE(NULLIF(conditionnement_qte, 0), 1),
+                conditionnement_libelle = COALESCE(NULLIF(conditionnement_libelle, ''), unite_comptage)
+        `);
+        await client.query(`
+            ALTER TABLE livraisons_district
+              ADD COLUMN IF NOT EXISTS type_livraison TEXT DEFAULT 'MENSUELLE',
+              ADD COLUMN IF NOT EXISTS reference_livraison TEXT
+        `);
+        await client.query(`
+            UPDATE livraisons_district
+            SET type_livraison = COALESCE(NULLIF(type_livraison, ''), 'MENSUELLE')
+        `);
+        await client.query(`
+            CREATE TABLE IF NOT EXISTS livraisons_urgentes (
+                id SERIAL PRIMARY KEY,
+                code_structure TEXT NOT NULL,
+                code_med TEXT NOT NULL,
+                medicament_id INTEGER,
+                quantite_livree NUMERIC NOT NULL DEFAULT 0,
+                mois INTEGER NOT NULL,
+                annee INTEGER NOT NULL,
+                num_facture TEXT,
+                date_livraison DATE,
+                motif TEXT,
+                reference_livraison TEXT,
+                created_at TIMESTAMPTZ DEFAULT NOW()
+            )
+        `);
+        await client.query(`
+            UPDATE livraisons_urgentes
+            SET reference_livraison = COALESCE(NULLIF(reference_livraison, ''), COALESCE(NULLIF(num_facture, ''), 'URGENCE'))
+        `);
+        await client.query(`
+            ALTER TABLE livraisons_urgentes
+              ALTER COLUMN reference_livraison SET DEFAULT 'URGENCE',
+              ALTER COLUMN reference_livraison SET NOT NULL
+        `);
+        await client.query('DROP INDEX IF EXISTS uq_livraisons_urgentes_ref');
+        await client.query(`
+            CREATE UNIQUE INDEX uq_livraisons_urgentes_ref
+            ON livraisons_urgentes (code_structure, code_med, mois, annee, reference_livraison)
+        `);
+        await client.query('COMMIT');
+        res.json({ ok: true });
+    } catch (err) {
+        await client.query('ROLLBACK').catch(() => {});
+        res.status(500).json({ ok: false, error: err.message });
+    } finally {
+        client.release();
     }
 });
 
