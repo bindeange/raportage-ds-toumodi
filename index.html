@@ -138,6 +138,7 @@
                 <button id="district-tab-dashboard" class="active" onclick="showDistrictDashboard()">Tableau de bord</button>
                 <button id="district-tab-rapports" onclick="showDistrictReportsView()">Rapports</button>
                 <button id="district-tab-bilan" onclick="showDistrictBilanView()">Bilan</button>
+                <button id="district-tab-livraisons" onclick="showDistrictLivraisonsView()">Livraisons</button>
                 <button id="district-tab-passwords" onclick="showPasswordManager()">Mots de passe</button>
             </div>
 
@@ -167,10 +168,9 @@
                 <select id="district-espc" onchange="loadDistrictReports()"></select>
                 <label><b>PERIODE :</b></label>
                 <select id="district-period" onchange="loadDistrictReports()"></select>
-                <label><b>PROGRAMME DE RAPPORTAGE :</b></label>
-                <select id="district-programme" onchange="loadDistrictReports()"></select>
+                <div id="district-report-summary" style="margin:10px 0; color:#555;"></div>
                 <table>
-                    <thead><tr><th>ESPC</th><th>Statut</th><th>Date</th><th>Action</th></tr></thead>
+                    <thead><tr><th>Programme / Famille</th><th>Statut</th><th>Action</th></tr></thead>
                     <tbody id="district-body"></tbody>
                 </table>
             </div>
@@ -207,6 +207,34 @@
                             <tr><th>Indicateur</th><th>Valeur</th></tr>
                         </thead>
                         <tbody id="bilan-indic-body"></tbody>
+                    </table>
+                </div>
+            </div>
+
+            <div id="district-livraisons-view" class="no-disp">
+                <div class="district-filters">
+                    <label><b>PERIODE :</b><select id="livraisons-period" onchange="loadDistrictLivraisons()"></select></label>
+                    <label><b>ESPC :</b><select id="livraisons-espc" onchange="loadDistrictLivraisons()"></select></label>
+                    <label><b>PROGRAMME :</b><select id="livraisons-programme" onchange="loadDistrictLivraisons()"></select></label>
+                    <button class="btn-small" style="background:var(--accent);" onclick="loadDistrictLivraisons()">Actualiser</button>
+                    <button class="btn-small" style="background:var(--danger);" onclick="deleteDistrictLivraisonsPeriod()">Supprimer livraisons periode</button>
+                </div>
+                <div class="dashboard-wrap">
+                    <table class="dashboard-table">
+                        <thead>
+                            <tr>
+                                <th>Structure</th>
+                                <th>Code structure</th>
+                                <th>Programme</th>
+                                <th>Medicament</th>
+                                <th>Code livraison</th>
+                                <th>Quantite livree</th>
+                                <th>Facture</th>
+                                <th>Date</th>
+                                <th>Type</th>
+                            </tr>
+                        </thead>
+                        <tbody id="livraisons-body"></tbody>
                     </table>
                 </div>
             </div>
@@ -492,7 +520,7 @@ async function showDistrictHome(options = {}) {
 
     const espcSel = document.getElementById('district-espc');
     const keepEspc = options.keepEspcId || districtReturnEspcId || espcSel.value || '';
-    espcSel.innerHTML = '<option value="">-- Tous les ESPC --</option>' +
+    espcSel.innerHTML = '<option value="">-- Choisir une structure --</option>' +
         districtEspcs.map(e => `<option value="${e.id}">${e.nom_entite}</option>`).join('');
     if (keepEspc && districtEspcs.some(e => Number(e.id) === Number(keepEspc))) {
         espcSel.value = String(keepEspc);
@@ -502,23 +530,30 @@ async function showDistrictHome(options = {}) {
     fillDistrictPeriodSelect('district-period');
     fillDistrictPeriodSelect('dashboard-period');
     fillDistrictPeriodSelect('bilan-period');
+    fillDistrictPeriodSelect('livraisons-period');
 
     const sel = document.getElementById('district-programme');
-    sel.innerHTML = '<option value="">-- Choisissez un programme --</option>' +
-        listFamilles.map(f => `<option value="${f.id}">${f.nom_famille}</option>`).join('');
+    if (sel) {
+        sel.innerHTML = '<option value="">-- Tous les programmes --</option>' +
+            listFamilles.map(f => `<option value="${f.id}">${f.nom_famille}</option>`).join('');
+    }
     const bilanProg = document.getElementById('bilan-programme');
     bilanProg.innerHTML = '<option value="">-- Choisissez un programme --</option>' +
         listFamilles.map(f => `<option value="${f.id}">${f.nom_famille}</option>`).join('');
-    document.getElementById('district-body').innerHTML = '<tr><td colspan="4">Choisissez un programme pour afficher les rapports.</td></tr>';
+    const livraisonsEspc = document.getElementById('livraisons-espc');
+    livraisonsEspc.innerHTML = '<option value="">-- Tous les ESPC --</option>' +
+        districtEspcs.map(e => `<option value="${e.id}">${e.nom_entite}</option>`).join('');
+    const livraisonsProg = document.getElementById('livraisons-programme');
+    livraisonsProg.innerHTML = '<option value="">-- Tous les programmes --</option>' +
+        listFamilles.map(f => `<option value="${f.id}">${f.nom_famille}</option>`).join('');
+    document.getElementById('district-body').innerHTML = '<tr><td colspan="3">Choisissez une structure pour afficher ses programmes.</td></tr>';
     document.getElementById('bilan-body').innerHTML = '<tr><td colspan="8">Choisissez un programme pour afficher le bilan.</td></tr>';
     document.getElementById('bilan-indic-head').innerHTML = '<tr><th>Indicateur</th><th>Valeur</th></tr>';
     document.getElementById('bilan-indic-body').innerHTML = '<tr><td colspan="2">Choisissez un programme pour afficher le bilan des indicateurs.</td></tr>';
+    document.getElementById('livraisons-body').innerHTML = '<tr><td colspan="9">Choisissez une periode pour afficher les livraisons.</td></tr>';
     await loadDistrictDashboard();
     if (options.view === 'rapports') {
         showDistrictReportsView();
-        if (document.getElementById('district-programme').value) {
-            await loadDistrictReports();
-        }
     }
 }
 
@@ -543,10 +578,12 @@ function setDistrictTab(tab) {
     document.getElementById('district-tab-dashboard').classList.toggle('active', tab === 'dashboard');
     document.getElementById('district-tab-rapports').classList.toggle('active', tab === 'rapports');
     document.getElementById('district-tab-bilan').classList.toggle('active', tab === 'bilan');
+    document.getElementById('district-tab-livraisons').classList.toggle('active', tab === 'livraisons');
     document.getElementById('district-tab-passwords').classList.toggle('active', tab === 'passwords');
     document.getElementById('district-dashboard-view').classList.toggle('no-disp', tab !== 'dashboard');
     document.getElementById('district-reports-view').classList.toggle('no-disp', tab !== 'rapports');
     document.getElementById('district-bilan-view').classList.toggle('no-disp', tab !== 'bilan');
+    document.getElementById('district-livraisons-view').classList.toggle('no-disp', tab !== 'livraisons');
     document.getElementById('district-passwords-view').classList.toggle('no-disp', tab !== 'passwords');
 }
 
@@ -558,6 +595,7 @@ async function showDistrictDashboard() {
 
 function showDistrictReportsView() {
     setDistrictTab('rapports');
+    loadDistrictReports();
 }
 
 async function showDistrictBilanView() {
@@ -570,6 +608,135 @@ async function showDistrictBilanView() {
     if (document.getElementById('bilan-programme').value) {
         await loadDistrictBilan();
     }
+}
+
+async function showDistrictLivraisonsView() {
+    setDistrictTab('livraisons');
+    fillDistrictPeriodSelect('livraisons-period');
+    if (!document.getElementById('livraisons-espc').innerHTML.trim()) {
+        document.getElementById('livraisons-espc').innerHTML = '<option value="">-- Tous les ESPC --</option>' +
+            districtEspcs.map(e => `<option value="${e.id}">${e.nom_entite}</option>`).join('');
+    }
+    if (!document.getElementById('livraisons-programme').innerHTML.trim()) {
+        document.getElementById('livraisons-programme').innerHTML = '<option value="">-- Tous les programmes --</option>' +
+            listFamilles.map(f => `<option value="${f.id}">${f.nom_famille}</option>`).join('');
+    }
+    await loadDistrictLivraisons();
+}
+
+async function loadDistrictLivraisons() {
+    const periodValue = document.getElementById('livraisons-period')?.value || (currentM + '/' + currentA);
+    const [selectedM, selectedA] = periodValue.split('/').map(Number);
+    const espcId = document.getElementById('livraisons-espc')?.value || null;
+    const familleId = document.getElementById('livraisons-programme')?.value || null;
+    const body = document.getElementById('livraisons-body');
+
+    loader(true);
+    const rows = await neonQuery(`
+        WITH normalized_livraisons AS (
+            SELECT
+                ld.*,
+                regexp_replace(upper(COALESCE(ld.code_structure, '')), '[^A-Z0-9]', '', 'g') AS norm_structure,
+                regexp_replace(upper(COALESCE(ld.code_med, '')), '[^A-Z0-9]', '', 'g') AS norm_code_med
+            FROM livraisons_district ld
+            WHERE ld.mois::text = $1::text
+              AND ld.annee::text = $2::text
+        ),
+        normalized_medicaments AS (
+            SELECT
+                m.*,
+                ARRAY[
+                    regexp_replace(upper(COALESCE(m.code1, '')), '[^A-Z0-9]', '', 'g'),
+                    regexp_replace(upper(COALESCE(m.code2, '')), '[^A-Z0-9]', '', 'g'),
+                    regexp_replace(upper(COALESCE(m.code3, '')), '[^A-Z0-9]', '', 'g'),
+                    regexp_replace(upper(COALESCE(m.code4, '')), '[^A-Z0-9]', '', 'g'),
+                    regexp_replace(upper(COALESCE(m.code5, '')), '[^A-Z0-9]', '', 'g')
+                ] AS norm_codes
+            FROM medicaments m
+        )
+        SELECT
+            COALESCE(e.nom_entite, 'Structure non reconnue') AS nom_entite,
+            ld.code_structure,
+            COALESCE(f.nom_famille, 'Programme non reconnu') AS nom_famille,
+            COALESCE(m.dci, 'Medicament non reconnu') AS dci,
+            ld.code_med,
+            ld.quantite_livree,
+            ld.num_facture,
+            ld.date_livraison,
+            COALESCE(ld.type_livraison, 'MENSUELLE') AS type_livraison
+        FROM normalized_livraisons ld
+        LEFT JOIN entites e
+          ON regexp_replace(upper(COALESCE(e.code_structure, '')), '[^A-Z0-9]', '', 'g') = ld.norm_structure
+        LEFT JOIN normalized_medicaments m
+          ON ld.norm_code_med <> ''
+         AND ld.norm_code_med = ANY(m.norm_codes)
+        LEFT JOIN familles f ON f.id = m.famille_id
+        WHERE ($3::integer IS NULL OR e.id = $3::integer)
+          AND ($4::integer IS NULL OR m.famille_id = $4::integer)
+        ORDER BY e.nom_entite NULLS LAST, f.nom_famille NULLS LAST, m.dci NULLS LAST, ld.code_med
+    `, [selectedM, selectedA, espcId, familleId]);
+    loader(false);
+
+    body.innerHTML = rows.length
+        ? rows.map(r => `<tr>
+            <td align="left"><b>${htmlEscape(r.nom_entite)}</b></td>
+            <td>${htmlEscape(r.code_structure || '')}</td>
+            <td>${htmlEscape(r.nom_famille || '')}</td>
+            <td align="left">${htmlEscape(r.dci || '')}</td>
+            <td>${htmlEscape(r.code_med || '')}</td>
+            <td>${formatBilanNumber(r.quantite_livree)}</td>
+            <td>${htmlEscape(r.num_facture || '')}</td>
+            <td>${htmlEscape(r.date_livraison || '')}</td>
+            <td>${htmlEscape(r.type_livraison || '')}</td>
+        </tr>`).join('')
+        : '<tr><td colspan="9">Aucune livraison trouvee pour cette periode.</td></tr>';
+}
+
+async function deleteDistrictLivraisonsPeriod() {
+    if (!isDistrict()) return;
+
+    const periodValue = document.getElementById('livraisons-period')?.value || (currentM + '/' + currentA);
+    const [selectedM, selectedA] = periodValue.split('/').map(Number);
+    if (!selectedM || !selectedA) {
+        alert("Periode invalide.");
+        return;
+    }
+
+    loader(true);
+    const countRows = await neonQuery(`
+        SELECT COUNT(1)::integer AS total
+        FROM livraisons_district
+        WHERE mois::text = $1::text
+          AND annee::text = $2::text
+    `, [selectedM, selectedA]);
+    loader(false);
+
+    const total = Number(countRows[0]?.total || 0);
+    if (!total) {
+        alert(`Aucune livraison a supprimer pour ${selectedM}/${selectedA}.`);
+        return;
+    }
+
+    const ok = confirm(
+        `Supprimer ${total} livraison(s) de la periode ${selectedM}/${selectedA} ?\n\n` +
+        "Cette action ne supprime pas les rapports deja saisis ni les stocks valides."
+    );
+    if (!ok) return;
+
+    const secondOk = confirm("Confirmation finale : supprimer ces livraisons pour permettre une nouvelle synchronisation ?");
+    if (!secondOk) return;
+
+    loader(true);
+    const deleted = await neonQuery(`
+        DELETE FROM livraisons_district
+        WHERE mois::text = $1::text
+          AND annee::text = $2::text
+        RETURNING id
+    `, [selectedM, selectedA]);
+    loader(false);
+
+    alert(`${deleted.length} livraison(s) supprimee(s) pour ${selectedM}/${selectedA}. Vous pouvez relancer la synchronisation des livraisons.`);
+    await loadDistrictLivraisons();
 }
 
 async function loadBilanMedicaments() {
@@ -894,15 +1061,18 @@ async function showDashboardMissing(entiteId, familleId, title, mois, annee) {
         livraisons_m AS (
             SELECT m.id AS medicament_id, SUM(COALESCE(ld.quantite_livree, 0)) AS total_livre
             FROM target t
-            JOIN livraisons_district ld ON upper(trim(ld.code_structure)) = upper(trim(t.code_structure))
+            JOIN livraisons_district ld
+              ON regexp_replace(upper(COALESCE(ld.code_structure, '')), '[^A-Z0-9]', '', 'g')
+               = regexp_replace(upper(COALESCE(t.code_structure, '')), '[^A-Z0-9]', '', 'g')
             JOIN medicaments m
-              ON replace(upper(trim(ld.code_med)), '_', '-') IN (
-                  replace(upper(trim(m.code1)), '_', '-'),
-                  replace(upper(trim(m.code2)), '_', '-'),
-                  replace(upper(trim(m.code3)), '_', '-'),
-                  replace(upper(trim(m.code4)), '_', '-'),
-                  replace(upper(trim(m.code5)), '_', '-')
-              )
+              ON regexp_replace(upper(COALESCE(ld.code_med, '')), '[^A-Z0-9]', '', 'g') IN (
+                  regexp_replace(upper(COALESCE(m.code1, '')), '[^A-Z0-9]', '', 'g'),
+                  regexp_replace(upper(COALESCE(m.code2, '')), '[^A-Z0-9]', '', 'g'),
+                  regexp_replace(upper(COALESCE(m.code3, '')), '[^A-Z0-9]', '', 'g'),
+                  regexp_replace(upper(COALESCE(m.code4, '')), '[^A-Z0-9]', '', 'g'),
+                  regexp_replace(upper(COALESCE(m.code5, '')), '[^A-Z0-9]', '', 'g')
+             )
+             AND regexp_replace(upper(COALESCE(ld.code_med, '')), '[^A-Z0-9]', '', 'g') <> ''
             WHERE ld.mois::text = $3::text
               AND ld.annee::text = $4::text
               AND m.famille_id = $2
@@ -911,15 +1081,18 @@ async function showDashboardMissing(entiteId, familleId, title, mois, annee) {
         livraisons_m1 AS (
             SELECT m.id AS medicament_id, SUM(COALESCE(ld.quantite_livree, 0)) AS total_livre
             FROM target t
-            JOIN livraisons_district ld ON upper(trim(ld.code_structure)) = upper(trim(t.code_structure))
+            JOIN livraisons_district ld
+              ON regexp_replace(upper(COALESCE(ld.code_structure, '')), '[^A-Z0-9]', '', 'g')
+               = regexp_replace(upper(COALESCE(t.code_structure, '')), '[^A-Z0-9]', '', 'g')
             JOIN medicaments m
-              ON replace(upper(trim(ld.code_med)), '_', '-') IN (
-                  replace(upper(trim(m.code1)), '_', '-'),
-                  replace(upper(trim(m.code2)), '_', '-'),
-                  replace(upper(trim(m.code3)), '_', '-'),
-                  replace(upper(trim(m.code4)), '_', '-'),
-                  replace(upper(trim(m.code5)), '_', '-')
+              ON regexp_replace(upper(COALESCE(ld.code_med, '')), '[^A-Z0-9]', '', 'g') IN (
+                  regexp_replace(upper(COALESCE(m.code1, '')), '[^A-Z0-9]', '', 'g'),
+                  regexp_replace(upper(COALESCE(m.code2, '')), '[^A-Z0-9]', '', 'g'),
+                  regexp_replace(upper(COALESCE(m.code3, '')), '[^A-Z0-9]', '', 'g'),
+                  regexp_replace(upper(COALESCE(m.code4, '')), '[^A-Z0-9]', '', 'g'),
+                  regexp_replace(upper(COALESCE(m.code5, '')), '[^A-Z0-9]', '', 'g')
               )
+             AND regexp_replace(upper(COALESCE(ld.code_med, '')), '[^A-Z0-9]', '', 'g') <> ''
             WHERE ld.mois::text = $5::text
               AND ld.annee::text = $6::text
               AND m.famille_id = $2
@@ -1026,39 +1199,41 @@ async function loadDistrictDashboard() {
             ),
             livraisons_m AS (
                 SELECT
-                    ld.code_structure,
+                    regexp_replace(upper(COALESCE(ld.code_structure, '')), '[^A-Z0-9]', '', 'g') AS norm_structure,
                     m.id AS medicament_id,
                     SUM(COALESCE(ld.quantite_livree, 0)) AS total_livre
                 FROM livraisons_district ld
                 JOIN medicaments m
-                  ON replace(upper(trim(ld.code_med)), '_', '-') IN (
-                      replace(upper(trim(m.code1)), '_', '-'),
-                      replace(upper(trim(m.code2)), '_', '-'),
-                      replace(upper(trim(m.code3)), '_', '-'),
-                      replace(upper(trim(m.code4)), '_', '-'),
-                      replace(upper(trim(m.code5)), '_', '-')
+                  ON regexp_replace(upper(COALESCE(ld.code_med, '')), '[^A-Z0-9]', '', 'g') IN (
+                      regexp_replace(upper(COALESCE(m.code1, '')), '[^A-Z0-9]', '', 'g'),
+                      regexp_replace(upper(COALESCE(m.code2, '')), '[^A-Z0-9]', '', 'g'),
+                      regexp_replace(upper(COALESCE(m.code3, '')), '[^A-Z0-9]', '', 'g'),
+                      regexp_replace(upper(COALESCE(m.code4, '')), '[^A-Z0-9]', '', 'g'),
+                      regexp_replace(upper(COALESCE(m.code5, '')), '[^A-Z0-9]', '', 'g')
                   )
+                 AND regexp_replace(upper(COALESCE(ld.code_med, '')), '[^A-Z0-9]', '', 'g') <> ''
                 WHERE ld.mois::text = $1::text
                   AND ld.annee::text = $2::text
-                GROUP BY ld.code_structure, m.id
+                GROUP BY norm_structure, m.id
             ),
             livraisons_m1 AS (
                 SELECT
-                    ld.code_structure,
+                    regexp_replace(upper(COALESCE(ld.code_structure, '')), '[^A-Z0-9]', '', 'g') AS norm_structure,
                     m.id AS medicament_id,
                     SUM(COALESCE(ld.quantite_livree, 0)) AS total_livre
                 FROM livraisons_district ld
                 JOIN medicaments m
-                  ON replace(upper(trim(ld.code_med)), '_', '-') IN (
-                      replace(upper(trim(m.code1)), '_', '-'),
-                      replace(upper(trim(m.code2)), '_', '-'),
-                      replace(upper(trim(m.code3)), '_', '-'),
-                      replace(upper(trim(m.code4)), '_', '-'),
-                      replace(upper(trim(m.code5)), '_', '-')
+                  ON regexp_replace(upper(COALESCE(ld.code_med, '')), '[^A-Z0-9]', '', 'g') IN (
+                      regexp_replace(upper(COALESCE(m.code1, '')), '[^A-Z0-9]', '', 'g'),
+                      regexp_replace(upper(COALESCE(m.code2, '')), '[^A-Z0-9]', '', 'g'),
+                      regexp_replace(upper(COALESCE(m.code3, '')), '[^A-Z0-9]', '', 'g'),
+                      regexp_replace(upper(COALESCE(m.code4, '')), '[^A-Z0-9]', '', 'g'),
+                      regexp_replace(upper(COALESCE(m.code5, '')), '[^A-Z0-9]', '', 'g')
                   )
+                 AND regexp_replace(upper(COALESCE(ld.code_med, '')), '[^A-Z0-9]', '', 'g') <> ''
                 WHERE ld.mois::text = $3::text
                   AND ld.annee::text = $4::text
-                GROUP BY ld.code_structure, m.id
+                GROUP BY norm_structure, m.id
             )
             SELECT
                 ve.entite_id,
@@ -1107,10 +1282,10 @@ async function loadDistrictDashboard() {
               ON prev.rapport_id = rp.id
              AND prev.medicament_id = m.id
             LEFT JOIN livraisons_m liv
-              ON liv.code_structure = ve.code_structure
+              ON liv.norm_structure = regexp_replace(upper(COALESCE(ve.code_structure, '')), '[^A-Z0-9]', '', 'g')
              AND liv.medicament_id = m.id
             LEFT JOIN livraisons_m1 liv1
-              ON liv1.code_structure = ve.code_structure
+              ON liv1.norm_structure = regexp_replace(upper(COALESCE(ve.code_structure, '')), '[^A-Z0-9]', '', 'g')
              AND liv1.medicament_id = m.id
             GROUP BY ve.entite_id, ve.espc_id, ve.type_entite, f.id, r.id, r.statut
         `, [selectedM, selectedA, previous.mois, previous.annee])
@@ -1161,12 +1336,14 @@ async function loadDistrictDashboard() {
 }
 
 async function loadDistrictReports() {
-    const familleId = document.getElementById('district-programme').value;
+    const familleId = null;
     const espcId = document.getElementById('district-espc').value;
     const periodValue = document.getElementById('district-period').value || (currentM + '/' + currentA);
     const [selectedM, selectedA] = periodValue.split('/').map(Number);
-    if (!familleId) {
-        document.getElementById('district-body').innerHTML = '<tr><td colspan="4">Choisissez un programme pour afficher les rapports.</td></tr>';
+
+    if (!espcId) {
+        document.getElementById('district-report-summary').innerHTML = 'Choisissez une structure pour voir ses programmes de haut en bas.';
+        document.getElementById('district-body').innerHTML = '<tr><td colspan="3">Aucune structure choisie.</td></tr>';
         return;
     }
 
@@ -1210,70 +1387,95 @@ async function loadDistrictReports() {
                   AND fp.est_pnlp = TRUE
             )
         ),
-        latest_reports AS (
-            SELECT DISTINCT ON (v.entite_id)
+        report_targets AS (
+            SELECT
                 v.entite_id,
+                v.nom_entite,
+                v.type_entite,
+                v.parent_nom,
+                v.ordre,
+                f.id AS famille_id,
+                f.nom_famille
+            FROM visible_entities v
+            JOIN familles f
+              ON ($1::integer IS NULL OR f.id = $1::integer)
+             AND (
+                v.type_entite = 'ESPC'
+                OR f.est_pnlp = TRUE
+                OR UPPER(f.nom_famille) LIKE '%PNLP%'
+             )
+        ),
+        latest_reports AS (
+            SELECT DISTINCT ON (t.entite_id, t.famille_id)
+                t.entite_id,
+                t.famille_id,
                 r.id,
                 r.statut,
                 r.date_soumission,
                 r.mois,
                 r.annee
-            FROM visible_entities v
-            JOIN rapports r ON r.entite_id = v.entite_id
+            FROM report_targets t
+            JOIN rapports r ON r.entite_id = t.entite_id
             JOIN rapport_stock_details rsd ON rsd.rapport_id = r.id
             JOIN medicaments m ON m.id = rsd.medicament_id
-            WHERE m.famille_id = $1
+            WHERE m.famille_id = t.famille_id
               AND r.mois = $2
               AND r.annee = $3
-            ORDER BY v.entite_id, r.annee::integer DESC, r.mois::integer DESC, r.id DESC
+            ORDER BY t.entite_id, t.famille_id, r.annee::integer DESC, r.mois::integer DESC, r.id DESC
         )
         SELECT
-            v.entite_id,
-            v.nom_entite,
-            v.type_entite,
+            t.entite_id,
+            t.nom_entite,
+            t.type_entite,
+            t.famille_id,
+            t.nom_famille,
             r.id AS rapport_id,
             r.statut,
             r.date_soumission,
             r.mois,
             r.annee
-        FROM visible_entities v
-        LEFT JOIN latest_reports r ON r.entite_id = v.entite_id
-        ORDER BY v.parent_nom, v.ordre, v.nom_entite
+        FROM report_targets t
+        LEFT JOIN latest_reports r
+          ON r.entite_id = t.entite_id
+         AND r.famille_id = t.famille_id
+        ORDER BY t.ordre, t.nom_famille, t.nom_entite
     `, [familleId, selectedM, selectedA, espcId || null]);
     loader(false);
 
-    const selectedFamille = listFamilles.find(f => Number(f.id) === Number(familleId));
+    const selectedEspcName = espcId
+        ? (districtEspcs.find(e => Number(e.id) === Number(espcId))?.nom_entite || '')
+        : '';
+    const completedStatuses = ['TRANSMIS', 'Saisi', 'SAISI', 'Valide', 'Validé', 'VALIDE', 'VALIDÉ'];
+    const completedCount = rows.filter(r => completedStatuses.includes(r.statut)).length;
+    const missingCount = rows.filter(r => !r.rapport_id).length;
+    const summaryTarget = `<b>${htmlEscape(selectedEspcName)}</b>`;
+    document.getElementById('district-report-summary').innerHTML = rows.length
+        ? `${summaryTarget} - ${completedCount} transmis/valide(s), ${missingCount} a saisir.`
+        : '';
+
     document.getElementById('district-body').innerHTML = rows.map(r => {
-        const adminValidated = ['TRANSMIS', 'Valide', 'Validé', 'VALIDE', 'VALIDÉ'].includes(r.statut);
-        const statut = adminValidated
-            ? `<span class="status-ok">${r.statut}</span>`
+        const selectedFamille = { id: r.famille_id, nom_famille: r.nom_famille };
+        const completed = completedStatuses.includes(r.statut);
+        const displayStatus = r.statut
+            ? String(r.statut).toUpperCase()
+            : 'A SAISIR';
+        const statut = completed
+            ? `<span class="status-ok">${htmlEscape(displayStatus)}</span>`
             : r.statut === 'REOUVERT'
-                ? `<span class="status-open">REOUVERT</span>`
-                : r.statut
-                    ? `<span class="status-wait">${r.statut}</span>`
-                    : `<span class="status-wait">NON RECU</span>`;
-        const date = r.date_soumission ? new Date(r.date_soumission).toLocaleDateString('fr-FR') : '-';
-        const period = r.mois && r.annee ? `${r.mois}/${r.annee}` : '-';
-        const label = r.type_entite === 'ASC' ? `ASC - ${r.nom_entite}` : `<b>${r.nom_entite}</b>`;
-            const openMois = r.mois || selectedM;
+                ? `<span class="status-open">NON VALIDE</span><br><small>REOUVERT</small>`
+                : `<span class="status-wait">${htmlEscape(displayStatus)}</span>`;
+        const openMois = r.mois || selectedM;
         const openAnnee = r.annee || selectedA;
-        const openLabel = r.rapport_id ? 'Consulter' : (Number(selectedM) === Number(currentM) && Number(selectedA) === Number(currentA) ? 'Creer / ouvrir' : '');
+        const openLabel = r.rapport_id ? 'Consulter' : (Number(selectedM) === Number(currentM) && Number(selectedA) === Number(currentA) ? 'Ouvrir' : '');
         const viewBtn = openLabel
             ? `<button class="btn-small" style="background:var(--accent);" onclick="viewDistrictReport(${r.entite_id}, ${selectedFamille.id}, '${selectedFamille.nom_famille.replace(/'/g, "\\'")} - ${r.nom_entite.replace(/'/g, "\\'")}', ${openMois}, ${openAnnee})">${openLabel}</button>`
             : '';
-        const validateBtn = r.rapport_id && !adminValidated
-            ? `<button class="btn-small" style="background:var(--success);" onclick="validateReport(${r.rapport_id})">Valider</button>`
-            : '';
-        const reopenBtn = r.rapport_id && adminValidated
-            ? `<button class="btn-small" style="background:#f39c12;" onclick="reopenReport(${r.rapport_id})">Reouvrir</button>`
-            : '';
         return `<tr>
-            <td align="left" style="${r.type_entite === 'ASC' ? 'padding-left:25px;color:#555;' : ''}">${label}</td>
-            <td>${statut}<br><small>${period}</small></td>
-            <td>${date}</td>
-            <td>${viewBtn} ${validateBtn} ${reopenBtn}</td>
+            <td><b>${htmlEscape(r.nom_famille)}</b></td>
+            <td>${statut}</td>
+            <td>${viewBtn}</td>
         </tr>`;
-    }).join('') || '<tr><td colspan="4">Aucun ESPC trouve.</td></tr>';
+    }).join('') || '<tr><td colspan="3">Aucun programme trouve pour cette structure.</td></tr>';
 }
 
 async function viewDistrictReport(entiteId, familleId, familleNom, mois = null, annee = null) {
@@ -1288,7 +1490,7 @@ async function viewDistrictReport(entiteId, familleId, familleNom, mois = null, 
 async function validateReport(rapportId) {
     if (!rapportId || !confirm("Valider ce rapport au niveau district ?")) return;
     loader(true);
-    await neonQuery("UPDATE rapports SET statut = 'TRANSMIS', date_soumission = COALESCE(date_soumission, NOW()) WHERE id = $1", [rapportId]);
+    await neonQuery("UPDATE rapports SET statut = 'Validé', date_soumission = COALESCE(date_soumission, NOW()) WHERE id = $1", [rapportId]);
     loader(false);
     loadDistrictReports();
 }
@@ -1396,14 +1598,16 @@ async function startSaisie(fId, fNom, readOnly = false, targetPeriod = null) {
                 SUM(COALESCE(ld.quantite_livree, 0)) AS total_livre
             FROM livraisons_district ld
             JOIN medicaments m
-              ON replace(upper(trim(ld.code_med)), '_', '-') IN (
-                  replace(upper(trim(m.code1)), '_', '-'),
-                  replace(upper(trim(m.code2)), '_', '-'),
-                  replace(upper(trim(m.code3)), '_', '-'),
-                  replace(upper(trim(m.code4)), '_', '-'),
-                  replace(upper(trim(m.code5)), '_', '-')
+              ON regexp_replace(upper(COALESCE(ld.code_med, '')), '[^A-Z0-9]', '', 'g') IN (
+                  regexp_replace(upper(COALESCE(m.code1, '')), '[^A-Z0-9]', '', 'g'),
+                  regexp_replace(upper(COALESCE(m.code2, '')), '[^A-Z0-9]', '', 'g'),
+                  regexp_replace(upper(COALESCE(m.code3, '')), '[^A-Z0-9]', '', 'g'),
+                  regexp_replace(upper(COALESCE(m.code4, '')), '[^A-Z0-9]', '', 'g'),
+                  regexp_replace(upper(COALESCE(m.code5, '')), '[^A-Z0-9]', '', 'g')
               )
-            WHERE upper(trim(ld.code_structure)) = upper(trim($1))
+             AND regexp_replace(upper(COALESCE(ld.code_med, '')), '[^A-Z0-9]', '', 'g') <> ''
+            WHERE regexp_replace(upper(COALESCE(ld.code_structure, '')), '[^A-Z0-9]', '', 'g')
+                = regexp_replace(upper(COALESCE($1, '')), '[^A-Z0-9]', '', 'g')
               AND ld.mois::text = $2::text
               AND ld.annee::text = $3::text
               AND m.famille_id = $4
@@ -1424,6 +1628,7 @@ async function startSaisie(fId, fNom, readOnly = false, targetPeriod = null) {
     loader(false);
 
     currentReportStatus = rapportMeta[0]?.statut || null;
+    const reportLocked = isLockedReportStatus(currentReportStatus);
     const canPrint = isLockedReportStatus(currentReportStatus);
     document.getElementById('print-btn').classList.toggle('no-disp', !canPrint);
     document.getElementById('print-subtitle').innerText =
@@ -1463,19 +1668,25 @@ async function startSaisie(fId, fNom, readOnly = false, targetPeriod = null) {
         ? meds.map(m => {
             const init  = stockMap[m.id] ?? 0;
             const saved = currentStockMap[m.id];
-            const livre = saved ? parseFloat(saved.quantite_recue) || 0 : getLivraison(m);
+            const livraisonDistrict = getLivraison(m);
+            const savedRecu = saved ? parseFloat(saved.quantite_recue) || 0 : 0;
+            const livre = !reportLocked && livraisonDistrict > 0 ? livraisonDistrict : savedRecu;
             const dist = saved ? parseFloat(saved.quantite_distribuee) || 0 : 0;
             const pert = saved ? parseFloat(saved.pertes_ajustements) || 0 : 0;
             const comment = saved?.commentaire || '';
             const dispInit = saved ? parseFloat(saved.stock_disponible) || 0 : init + livre;
             const visible = init > 0 || livre > 0 || saved || dist > 0 || pert !== 0;
+            const livraisonNote = !reportLocked && livraisonDistrict > 0
+                ? `<br><small style="color:#27ae60;font-size:9px;">${livraisonDistrict} livres Neon</small>` +
+                  (saved && savedRecu !== livraisonDistrict ? `<br><small style="color:#f39c12;font-size:9px;">ancienne saisie: ${savedRecu}</small>` : '')
+                : '';
             if (!visible) hiddenMeds.push(m);
             return `<tr id="row_${m.id}" style="${visible ? '' : 'display:none;'}">
                 <td align="left"><b>${m.dci}</b><br><small style="color:#7f8c8d;">${m.unite_comptage}</small></td>
                 <td class="st-init" id="st_${m.id}">${init}</td>
                 <td>
                     <input type="number" class="input-saisie" id="rec_${m.id}" value="${livre}" min="0" oninput="calc(${m.id})">
-                    ${livre > 0 ? `<br><small style="color:#27ae60;font-size:9px;">${livre} livres</small>` : ''}
+                    ${livraisonNote}
                 </td>
                 <td><input type="number" class="input-saisie" id="dist_${m.id}" value="${dist}" min="0" oninput="calc(${m.id})"></td>
                 <td><input type="number" class="input-saisie" id="pert_${m.id}" value="${pert}" oninput="calc(${m.id})"></td>
