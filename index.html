@@ -62,6 +62,18 @@
             #login-zone, #agent-home, #district-zone, .banner, #save-btn, #print-btn, #hidden-meds-box, #loader, button { display:none !important; }
             #saisie-zone { display:block !important; }
             .print-only { display:block; text-align:center; margin-bottom:10px; }
+            body.print-district-bilan #saisie-zone { display:none !important; }
+            body.print-district-bilan #district-zone { display:block !important; }
+            body.print-district-bilan #district-bilan-view { display:block !important; }
+            body.print-district-bilan #district-dashboard-view,
+            body.print-district-bilan #district-reports-view,
+            body.print-district-bilan #district-livraisons-view,
+            body.print-district-bilan #district-passwords-view,
+            body.print-district-bilan .district-menu,
+            body.print-district-bilan .district-filters { display:none !important; }
+            body.print-district-bilan .dashboard-wrap { overflow:visible; border:none; margin-bottom:14px; }
+            body.print-district-bilan .dashboard-table { min-width:0; width:100%; margin-top:4px; }
+            body.print-district-bilan h4 { margin:8px 0 4px; }
             table { page-break-inside:auto; }
             tr { page-break-inside:avoid; page-break-after:auto; }
             th, td { padding:4px; font-size:9px; }
@@ -181,6 +193,11 @@
                     <label><b>PROGRAMME :</b><select id="bilan-programme" onchange="loadBilanMedicaments()"></select></label>
                     <label><b>MEDICAMENT :</b><select id="bilan-medicament" onchange="loadDistrictBilan()"><option value="">-- Choisir un programme --</option></select></label>
                     <button class="btn-small" style="background:var(--accent);" onclick="loadDistrictBilan()">Actualiser</button>
+                    <button class="btn-small" style="background:#34495e;" onclick="printDistrictBilan()">Imprimer</button>
+                </div>
+                <div id="district-bilan-print-header" class="print-only">
+                    <h3 id="district-bilan-print-title" style="margin:0;">BILAN DISTRICT SANITAIRE</h3>
+                    <div id="district-bilan-print-subtitle"></div>
                 </div>
                 <div class="dashboard-wrap">
                     <h4>Bilan des medicaments</h4>
@@ -388,7 +405,7 @@ async function login() {
         document.getElementById('login-zone').classList.add('no-disp');
         document.getElementById('app-zone').classList.remove('no-disp');
         document.getElementById('display-name').innerText = isDistrict() ? 'DISTRICT SANITAIRE DE TOUMODI' : user.nom_entite;
-        isDistrict() ? showDistrictHome() : showHome();
+        isDistrict() ? await showDistrictHome() : showHome();
     } else {
         msg.innerText = "Mot de passe incorrect !";
     }
@@ -502,21 +519,8 @@ async function showDistrictHome(options = {}) {
     document.getElementById('agent-home').classList.add('no-disp');
     document.getElementById('saisie-zone').classList.add('no-disp');
     document.getElementById('district-zone').classList.remove('no-disp');
-    showDistrictDashboard();
 
-    if (!districtEspcs.length) {
-        districtEspcs = await neonQuery(`
-            SELECT id, nom_entite
-            FROM entites e
-            WHERE e.role = 'USER'
-              AND NOT EXISTS (
-                  SELECT 1
-                  FROM agents_asc a
-                  WHERE a.code_asc = e.code_structure OR e.nom_entite ILIKE 'ASC:%'
-              )
-            ORDER BY e.nom_entite
-        `);
-    }
+    await loadDistrictEspcs();
 
     const espcSel = document.getElementById('district-espc');
     const keepEspc = options.keepEspcId || districtReturnEspcId || espcSel.value || '';
@@ -557,6 +561,22 @@ async function showDistrictHome(options = {}) {
     }
 }
 
+async function loadDistrictEspcs(force = false) {
+    if (!force && districtEspcs.length) return districtEspcs;
+    districtEspcs = await neonQuery(`
+        SELECT id, nom_entite, code_structure
+        FROM entites e
+        WHERE e.role = 'USER'
+          AND NOT EXISTS (
+              SELECT 1
+              FROM agents_asc a
+              WHERE a.code_asc = e.code_structure OR e.nom_entite ILIKE 'ASC:%'
+          )
+        ORDER BY e.nom_entite
+    `);
+    return districtEspcs;
+}
+
 function fillDistrictPeriodSelect(selectId) {
     const periodSel = document.getElementById(selectId);
     if (!periodSel) return;
@@ -589,13 +609,20 @@ function setDistrictTab(tab) {
 
 async function showDistrictDashboard() {
     setDistrictTab('dashboard');
+    await loadDistrictEspcs();
     fillDistrictPeriodSelect('dashboard-period');
     await loadDistrictDashboard();
 }
 
-function showDistrictReportsView() {
+async function showDistrictReportsView() {
     setDistrictTab('rapports');
-    loadDistrictReports();
+    await loadDistrictEspcs();
+    const espcSel = document.getElementById('district-espc');
+    if (espcSel && espcSel.options.length <= 1) {
+        espcSel.innerHTML = '<option value="">-- Choisir une structure --</option>' +
+            districtEspcs.map(e => `<option value="${e.id}">${e.nom_entite}</option>`).join('');
+    }
+    await loadDistrictReports();
 }
 
 async function showDistrictBilanView() {
@@ -612,6 +639,7 @@ async function showDistrictBilanView() {
 
 async function showDistrictLivraisonsView() {
     setDistrictTab('livraisons');
+    await loadDistrictEspcs();
     fillDistrictPeriodSelect('livraisons-period');
     if (!document.getElementById('livraisons-espc').innerHTML.trim()) {
         document.getElementById('livraisons-espc').innerHTML = '<option value="">-- Tous les ESPC --</option>' +
@@ -1152,6 +1180,7 @@ async function showDashboardMissing(entiteId, familleId, title, mois, annee) {
 }
 
 async function loadDistrictDashboard() {
+    await loadDistrictEspcs();
     const periodValue = document.getElementById('dashboard-period')?.value || (currentM + '/' + currentA);
     const [selectedM, selectedA] = periodValue.split('/').map(Number);
     const previous = getPreviousPeriod(selectedM, selectedA);
@@ -1799,6 +1828,33 @@ function printCurrentReport() {
         return;
     }
     window.print();
+}
+
+function printDistrictBilan() {
+    const periodSel = document.getElementById('bilan-period');
+    const progSel = document.getElementById('bilan-programme');
+    const medSel = document.getElementById('bilan-medicament');
+    if (!progSel.value) {
+        alert("Choisissez un programme avant d'imprimer le bilan.");
+        return;
+    }
+
+    const periodLabel = periodSel.options[periodSel.selectedIndex]?.text || periodSel.value || '';
+    const progLabel = progSel.options[progSel.selectedIndex]?.text || '';
+    const medLabel = medSel.value
+        ? (medSel.options[medSel.selectedIndex]?.text || '')
+        : 'Tous les medicaments du programme';
+    document.getElementById('district-bilan-print-subtitle').innerText =
+        `Periode : ${periodLabel} | Programme : ${progLabel} | Medicament : ${medLabel}`;
+
+    document.body.classList.add('print-district-bilan');
+    const cleanup = () => {
+        document.body.classList.remove('print-district-bilan');
+        window.removeEventListener('afterprint', cleanup);
+    };
+    window.addEventListener('afterprint', cleanup);
+    window.print();
+    setTimeout(cleanup, 1000);
 }
 
 // 6. Sauvegarde
