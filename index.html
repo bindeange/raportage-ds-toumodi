@@ -151,6 +151,7 @@
                 <button id="district-tab-rapports" onclick="showDistrictReportsView()">Rapports</button>
                 <button id="district-tab-bilan" onclick="showDistrictBilanView()">Bilan</button>
                 <button id="district-tab-livraisons" onclick="showDistrictLivraisonsView()">Livraisons</button>
+                <button id="district-tab-period" onclick="showPeriodManager()">Periode</button>
                 <button id="district-tab-passwords" onclick="showPasswordManager()">Mots de passe</button>
             </div>
 
@@ -253,6 +254,25 @@
                         </thead>
                         <tbody id="livraisons-body"></tbody>
                     </table>
+                </div>
+            </div>
+
+            <div id="district-period-view" class="no-disp">
+                <div class="card" style="max-width:520px; margin:auto;">
+                    <h3 style="margin-top:0;">Periode active de rapportage</h3>
+                    <label><b>MOIS :</b></label>
+                    <select id="active-period-month">
+                        <option value="1">Janvier</option><option value="2">Fevrier</option>
+                        <option value="3">Mars</option><option value="4">Avril</option>
+                        <option value="5">Mai</option><option value="6">Juin</option>
+                        <option value="7">Juillet</option><option value="8">Aout</option>
+                        <option value="9">Septembre</option><option value="10">Octobre</option>
+                        <option value="11">Novembre</option><option value="12">Decembre</option>
+                    </select>
+                    <label><b>ANNEE :</b></label>
+                    <input id="active-period-year" type="number" min="2020" max="2100">
+                    <button class="btn-save" onclick="saveActivePeriod()">ENREGISTRER LA PERIODE</button>
+                    <p id="active-period-msg" style="text-align:center; font-weight:bold;"></p>
                 </div>
             </div>
 
@@ -599,12 +619,50 @@ function setDistrictTab(tab) {
     document.getElementById('district-tab-rapports').classList.toggle('active', tab === 'rapports');
     document.getElementById('district-tab-bilan').classList.toggle('active', tab === 'bilan');
     document.getElementById('district-tab-livraisons').classList.toggle('active', tab === 'livraisons');
+    document.getElementById('district-tab-period').classList.toggle('active', tab === 'period');
     document.getElementById('district-tab-passwords').classList.toggle('active', tab === 'passwords');
     document.getElementById('district-dashboard-view').classList.toggle('no-disp', tab !== 'dashboard');
     document.getElementById('district-reports-view').classList.toggle('no-disp', tab !== 'rapports');
     document.getElementById('district-bilan-view').classList.toggle('no-disp', tab !== 'bilan');
     document.getElementById('district-livraisons-view').classList.toggle('no-disp', tab !== 'livraisons');
+    document.getElementById('district-period-view').classList.toggle('no-disp', tab !== 'period');
     document.getElementById('district-passwords-view').classList.toggle('no-disp', tab !== 'passwords');
+}
+
+async function showPeriodManager() {
+    if (!isDistrict()) return;
+    setDistrictTab('period');
+    document.getElementById('active-period-month').value = String(currentM);
+    document.getElementById('active-period-year').value = String(currentA);
+    document.getElementById('active-period-msg').innerText = '';
+}
+
+async function saveActivePeriod() {
+    if (!isDistrict()) return;
+    const month = Number(document.getElementById('active-period-month').value);
+    const year = Number(document.getElementById('active-period-year').value);
+    const msg = document.getElementById('active-period-msg');
+    if (!Number.isInteger(month) || month < 1 || month > 12 || !Number.isInteger(year) || year < 2020 || year > 2100) {
+        msg.style.color = 'red';
+        msg.innerText = 'Periode invalide.';
+        return;
+    }
+    loader(true);
+    try {
+        await neonQuery(`
+            INSERT INTO parametres (cle, valeur) VALUES
+                ('mois_actif', $1),
+                ('annee_active', $2)
+            ON CONFLICT (cle) DO UPDATE SET valeur = EXCLUDED.valeur
+        `, [String(month), String(year)]);
+        currentM = String(month);
+        currentA = String(year);
+        document.getElementById('display-date').innerText = currentM + ' / ' + currentA;
+        msg.style.color = 'green';
+        msg.innerText = 'Periode active enregistree : ' + currentM + ' / ' + currentA;
+    } finally {
+        loader(false);
+    }
 }
 
 async function showDistrictDashboard() {
@@ -1967,4 +2025,3 @@ init();
 </script>
 </body>
 </html>
-
