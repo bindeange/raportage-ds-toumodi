@@ -465,10 +465,10 @@ async function showHome() {
             [user.id, currentM, currentA]
         ),
         neonQuery(`
-            SELECT DISTINCT ON (ae.id)
+            SELECT DISTINCT ON (ae.id, f.id)
                 ae.id AS asc_entite_id,
                 ae.nom_entite AS asc_nom,
-                7 AS famille_id,
+                f.id AS famille_id,
                 r.statut,
                 r.date_soumission,
                 r.id AS rapport_id,
@@ -476,14 +476,18 @@ async function showHome() {
                 r.annee
             FROM agents_asc a
             JOIN entites ae ON ae.code_structure = a.code_asc
+            JOIN familles f ON f.est_pnlp = TRUE OR UPPER(f.nom_famille) LIKE '%PNLP%'
             LEFT JOIN rapports r
               ON r.entite_id = ae.id
              AND r.mois = $2
              AND r.annee = $3
-            LEFT JOIN rapport_stock_details rsd ON rsd.rapport_id = r.id
-            LEFT JOIN medicaments m ON m.id = rsd.medicament_id AND m.famille_id = 7
+             AND (r.famille_id = f.id OR (r.famille_id IS NULL AND EXISTS (
+                 SELECT 1 FROM rapport_stock_details rsd
+                 JOIN medicaments m ON m.id = rsd.medicament_id
+                 WHERE rsd.rapport_id = r.id AND m.famille_id = f.id
+             )))
             WHERE a.code_espc = $1
-            ORDER BY ae.id, r.id DESC NULLS LAST
+            ORDER BY ae.id, f.id, r.id DESC NULLS LAST
         `, [user.code_structure, currentM, currentA])
     ]);
     loader(false);
@@ -515,7 +519,7 @@ async function showHome() {
                     ? `<span class="status-ok">ASC ${rep.statut || 'SAISI'} (${ascMois}/${ascAnnee})</span>`
                     : `<span class="status-wait">ASC A SAISIR (${ascMois}/${ascAnnee})</span>`;
                 html += `<tr>
-                    <td align="left" style="padding-left:25px;">ASC - ${rep.asc_nom}</td>
+                    <td align="left" style="padding-left:25px;">ICCM / ASC - ${htmlEscape(rep.asc_nom)}</td>
                     <td>${ascStatus}</td>
                     <td><button onclick="viewAscReport(${rep.asc_entite_id}, ${f.id}, '${f.nom_famille.replace(/'/g, "\\'")} - ${rep.asc_nom.replace(/'/g, "\\'")}', ${ascMois}, ${ascAnnee})"
                         class="btn-small" style="background:#7f8c8d;">Ouvrir ASC</button></td>
@@ -526,12 +530,21 @@ async function showHome() {
 }
 
 async function viewAscReport(entiteId, familleId, title, mois, annee) {
-    const rows = await neonQuery("SELECT * FROM entites WHERE id = $1", [entiteId]);
+    const rows = await neonQuery(`
+        SELECT e.id, e.nom_entite, e.code_structure, e.role
+        FROM entites e
+        JOIN agents_asc a ON a.code_asc = e.code_structure
+        WHERE e.id = $1 AND a.code_espc = $2
+    `, [entiteId, user.code_structure]);
     if (!rows.length) return;
     const previous = districtSelectedEntite;
     districtSelectedEntite = rows[0];
-    await startSaisie(familleId, title, true, { mois, annee });
-    districtSelectedEntite = previous;
+    const isCurrentPeriod = Number(mois) === Number(currentM) && Number(annee) === Number(currentA);
+    try {
+        await startSaisie(familleId, title, !isCurrentPeriod, { mois, annee });
+    } finally {
+        districtSelectedEntite = previous;
+    }
 }
 
 async function showDistrictHome(options = {}) {
@@ -1470,8 +1483,8 @@ async function loadDistrictReports() {
             WHERE EXISTS (
                 SELECT 1
                 FROM familles fp
-                WHERE fp.id = $1::integer
-                  AND fp.est_pnlp = TRUE
+                WHERE ($1::integer IS NULL OR fp.id = $1::integer)
+                  AND (fp.est_pnlp = TRUE OR UPPER(fp.nom_famille) LIKE '%PNLP%')
             )
         ),
         report_targets AS (
@@ -1558,7 +1571,7 @@ async function loadDistrictReports() {
             ? `<button class="btn-small" style="background:var(--accent);" onclick="viewDistrictReport(${r.entite_id}, ${selectedFamille.id}, '${selectedFamille.nom_famille.replace(/'/g, "\\'")} - ${r.nom_entite.replace(/'/g, "\\'")}', ${openMois}, ${openAnnee})">${openLabel}</button>`
             : '';
         return `<tr>
-            <td><b>${htmlEscape(r.nom_famille)}</b></td>
+            <td><b>${htmlEscape(r.nom_famille)}</b>${r.type_entite === "ASC" ? "<br><small>ICCM / ASC - " + htmlEscape(r.nom_entite) + "</small>" : ""}</td>
             <td>${statut}</td>
             <td>${viewBtn}</td>
         </tr>`;
@@ -1716,6 +1729,11 @@ async function startSaisie(fId, fNom, readOnly = false, targetPeriod = null) {
 
     currentReportStatus = rapportMeta[0]?.statut || null;
     const reportLocked = isLockedReportStatus(currentReportStatus);
+    if (reportLocked && !isDistrict()) {
+        currentReadOnly = true;
+        saveBtn.classList.add('no-disp');
+        document.getElementById('form-title').innerText = `Consultation : ${fNom} (${periodM}/${periodA})`;
+    }
     const canPrint = isLockedReportStatus(currentReportStatus);
     document.getElementById('print-btn').classList.toggle('no-disp', !canPrint);
     document.getElementById('print-subtitle').innerText =
