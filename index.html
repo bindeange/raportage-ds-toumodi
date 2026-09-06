@@ -22,10 +22,11 @@
         .status-open { color:#2980b9; font-weight:bold; }
         .district-filters { display:flex; gap:12px; align-items:flex-end; flex-wrap:wrap; margin:10px 0 15px; }
         .district-filters label { min-width:150px; }
-        .dashboard-wrap { overflow:auto; border:1px solid #ddd; border-radius:8px; }
+        .table-scroll, .dashboard-wrap { overflow:auto; max-height:70vh; border:1px solid #ddd; border-radius:8px; }
+        .table-scroll table, .dashboard-wrap table { margin-top:0; }
         .dashboard-table { min-width:900px; margin-top:0; }
         .dashboard-table th:first-child, .dashboard-table td:first-child { position:sticky; left:0; z-index:2; background:#fff; text-align:left; min-width:190px; }
-        .dashboard-table th:first-child { background:var(--primary); z-index:3; }
+        .dashboard-table th:first-child { background:var(--primary); z-index:7; }
         .dashboard-table th { white-space:nowrap; }
         .dash-cell { font-weight:bold; min-width:82px; }
         .dash-button { width:100%; min-width:58px; padding:7px 8px; border-radius:6px; color:white; font-size:12px; }
@@ -38,6 +39,18 @@
         .dash-none { background:#f4f6f7 !important; color:#7f8c8d; }
         .dash-check { background:#eef5ff !important; color:#21618c; }
         .dash-check .dash-button { background:#2980b9; }
+        .iccm-cell { min-width:210px; padding:6px; vertical-align:top; }
+        .iccm-summary { display:block; margin-bottom:5px; font-size:10px; color:#34495e; }
+        .iccm-list { display:grid; gap:5px; }
+        .iccm-item { display:grid; grid-template-columns:minmax(0, 1fr) auto; gap:4px; align-items:stretch; }
+        .iccm-button { display:flex; justify-content:space-between; align-items:center; gap:8px; width:100%; padding:6px 8px; border-radius:6px; color:white; font-size:10px; text-align:left; }
+        .iccm-button small { white-space:nowrap; font-weight:bold; }
+        .iccm-detail-button { padding:5px 7px; border-radius:6px; background:#7f8c8d; color:white; font-size:9px; }
+        .iccm-ok { background:#27ae60; }
+        .iccm-partial { background:#f39c12; }
+        .iccm-missing { background:#e74c3c; }
+        .iccm-check { background:#2980b9; }
+        .iccm-none { background:#95a5a6; }
         .dash-detail { margin-top:12px; border:1px solid #ddd; border-radius:8px; padding:12px; background:#fbfcfc; }
         .dash-detail h4 { margin:0 0 8px; color:var(--primary); }
         .dash-detail ul { margin:8px 0 0 18px; padding:0; }
@@ -48,6 +61,7 @@
         .logout-btn { background: var(--danger); color: white; padding: 6px 12px; font-size: 11px; }
         table { width: 100%; border-collapse: collapse; margin-top: 15px; background: white; }
         th { background: var(--primary); color: white; padding: 12px 8px; border: 1px solid #ddd; font-size: 11px; text-transform: uppercase; }
+        thead th { position:sticky; top:0; z-index:5; box-shadow:0 2px 0 rgba(255,255,255,.25), 0 3px 5px rgba(0,0,0,.12); }
         td { border: 1px solid #ddd; padding: 8px; text-align: center; }
         tr:nth-child(even) { background-color: #f9f9f9; }
         .input-saisie { width: 70px; text-align: center; padding: 5px; border: 1px solid #bdc3c7; border-radius: 4px; }
@@ -78,6 +92,7 @@
             tr { page-break-inside:avoid; page-break-after:auto; }
             th, td { padding:4px; font-size:9px; }
             input { border:none; padding:0; font-size:9px; text-align:center; }
+            thead th { position:static; box-shadow:none; }
         }
         #loader { display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.4); z-index:999; align-items:center; justify-content:center; }
         #loader.active { display:flex; }
@@ -103,6 +118,7 @@
             #indic-head th:first-child { min-width:220px; }
             .dash-button { min-width:62px; padding:7px 6px; }
             .dashboard-table { min-width:1000px; }
+            .iccm-cell { min-width:190px; }
         }
     </style>
 </head>
@@ -137,10 +153,12 @@
         <!-- Liste des rapports -->
         <div id="agent-home">
             <h3 style="color:var(--primary); border-bottom:2px solid var(--success); padding-bottom:5px;">Mes rapports a saisir</h3>
-            <table>
-                <thead><tr><th>Programme / Famille</th><th>Statut</th><th>Action</th></tr></thead>
-                <tbody id="home-body"></tbody>
-            </table>
+            <div class="table-scroll">
+                <table>
+                    <thead><tr><th>Programme / Famille</th><th>Statut</th><th>Action</th></tr></thead>
+                    <tbody id="home-body"></tbody>
+                </table>
+            </div>
         </div>
 
         <!-- District -->
@@ -182,10 +200,12 @@
                 <label><b>PERIODE :</b></label>
                 <select id="district-period" onchange="loadDistrictReports()"></select>
                 <div id="district-report-summary" style="margin:10px 0; color:#555;"></div>
-                <table>
-                    <thead><tr><th>Programme / Famille</th><th>Statut</th><th>Action</th></tr></thead>
-                    <tbody id="district-body"></tbody>
-                </table>
+                <div class="table-scroll">
+                    <table>
+                        <thead><tr><th>Programme / Famille</th><th>Statut</th><th>Action</th></tr></thead>
+                        <tbody id="district-body"></tbody>
+                    </table>
+                </div>
             </div>
 
             <div id="district-bilan-view" class="no-disp">
@@ -281,10 +301,12 @@
                     <b>Gestion des mots de passe des structures</b>
                     <button class="btn-small" style="background:#f39c12;" onclick="resetAllPasswords()">Tout remettre a 0000</button>
                 </div>
-                <table>
-                    <thead><tr><th>Structure</th><th>Role</th><th>Mot de passe</th><th>Action</th></tr></thead>
-                    <tbody id="password-body"></tbody>
-                </table>
+                <div class="table-scroll">
+                    <table>
+                        <thead><tr><th>Structure</th><th>Role</th><th>Mot de passe</th><th>Action</th></tr></thead>
+                        <tbody id="password-body"></tbody>
+                    </table>
+                </div>
             </div>
         </div>
 
@@ -297,21 +319,23 @@
             </div>
             <h3 id="form-title" style="color:var(--accent); margin:5px 0;">---</h3>
 
-            <div style="overflow-x:auto;">
+            <div>
                 <h4 id="stock-title">1. Mouvements de Stocks</h4>
-                <table>
-                    <thead>
-                        <tr>
-                            <th>Designation</th>
-                            <th>Stock Initial</th>
-                            <th>Recu</th>
-                            <th>Distribue</th>
-                            <th>Pertes/Ajust.</th>
-                            <th>Disponible</th>
-                        </tr>
-                    </thead>
-                    <tbody id="med-body"></tbody>
-                </table>
+                <div class="table-scroll">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Designation</th>
+                                <th>Stock Initial</th>
+                                <th>Recu</th>
+                                <th>Distribue</th>
+                                <th>Pertes/Ajust.</th>
+                                <th>Disponible</th>
+                            </tr>
+                        </thead>
+                        <tbody id="med-body"></tbody>
+                    </table>
+                </div>
                 <div id="hidden-meds-box" class="no-disp" style="margin-top:10px; border:1px dashed #3498db; padding:10px; background:#f8fbff;">
                     Ajouter un medicament masque :
                     <select id="hidden-meds-select" onchange="revealMedication(this.value)">
@@ -320,17 +344,19 @@
                 </div>
 
                 <h4 style="margin-top:25px;">2. Indicateurs d'activite</h4>
-                <table>
-                    <thead id="indic-head">
-                        <tr>
-                            <th>Indicateur</th>
-                            <th>Valeur</th>
-                            <th>NOUVELLE UTILISATRICE DE CETTE METHODE CE MOIS</th>
-                            <th>ANCIENNE UTILISATRICE DE CETTE METHODE CE MOIS</th>
-                        </tr>
-                    </thead>
-                    <tbody id="indic-body"></tbody>
-                </table>
+                <div class="table-scroll">
+                    <table>
+                        <thead id="indic-head">
+                            <tr>
+                                <th>Indicateur</th>
+                                <th>Valeur</th>
+                                <th>NOUVELLE UTILISATRICE DE CETTE METHODE CE MOIS</th>
+                                <th>ANCIENNE UTILISATRICE DE CETTE METHODE CE MOIS</th>
+                            </tr>
+                        </thead>
+                        <tbody id="indic-body"></tbody>
+                    </table>
+                </div>
             </div>
 
             <button id="save-btn" class="btn-save" onclick="saveData()">ENVOYER LE RAPPORT AU DISTRICT</button>
@@ -1146,6 +1172,50 @@ function renderDashboardCell(stat, entityId, familyId, title, mois, annee) {
     return `<td class="dash-cell dash-missing" title="Information attendue : 0/${attendus}"><button class="dash-button" onclick="${onclick}">X<br><small>0/${attendus}</small></button><button class="dash-button" style="margin-top:4px;background:#7f8c8d;" onclick="${detailClick}">Liste</button></td>`;
 }
 
+function getDashboardStatus(stat) {
+    const attendus = Number(stat?.attendus || 0);
+    const renseignes = Number(stat?.renseignes || 0);
+    const m1Livres = Number(stat?.m1_livres || 0);
+    if (!stat || attendus === 0) {
+        return m1Livres > 0
+            ? { key: 'check', label: `M-1 ${m1Livres}`, detail: true }
+            : { key: 'none', label: '-', detail: false };
+    }
+    if (renseignes >= attendus) return { key: 'ok', label: `OK ${renseignes}/${attendus}`, detail: false };
+    if (renseignes > 0) return { key: 'partial', label: `PART ${renseignes}/${attendus}`, detail: true };
+    return { key: 'missing', label: `X 0/${attendus}`, detail: true };
+}
+
+function renderDashboardIccmCell(ascList, statMap, family, mois, annee) {
+    if (!ascList.length) {
+        return '<td class="dash-cell dash-none iccm-cell" title="Aucun ICCM rattache a cette structure">-</td>';
+    }
+
+    const statuses = ascList.map(asc => ({
+        asc,
+        status: getDashboardStatus(statMap[`${asc.asc_id}:${family.id}`])
+    }));
+    const priority = { missing: 5, partial: 4, check: 3, ok: 2, none: 1 };
+    const overall = statuses.reduce((worst, item) =>
+        priority[item.status.key] > priority[worst] ? item.status.key : worst, 'none');
+    const okCount = statuses.filter(item => item.status.key === 'ok').length;
+    const summary = `${statuses.length} ICCM - ${okCount} complet${okCount > 1 ? 's' : ''}`;
+
+    const items = statuses.map(({ asc, status }) => {
+        const title = `${family.nom_famille} - ${asc.asc_nom}`;
+        const openClick = `viewDistrictReport(${asc.asc_id}, ${family.id}, '${jsArg(title)}', ${mois}, ${annee})`;
+        const detailClick = `showDashboardMissing(${asc.asc_id}, ${family.id}, '${jsArg(title)}', ${mois}, ${annee})`;
+        return `<div class="iccm-item">
+            <button class="iccm-button iccm-${status.key}" onclick="${openClick}" title="Ouvrir le rapport ICCM de ${htmlEscape(asc.asc_nom)}">
+                <span>${htmlEscape(asc.asc_nom)}</span><small>${status.label}</small>
+            </button>
+            ${status.detail ? `<button class="iccm-detail-button" onclick="${detailClick}" title="Afficher les elements attendus">Detail</button>` : ''}
+        </div>`;
+    }).join('');
+
+    return `<td class="dash-cell dash-${overall} iccm-cell"><span class="iccm-summary">${summary}</span><div class="iccm-list">${items}</div></td>`;
+}
+
 
 
 async function showDashboardMissing(entiteId, familleId, title, mois, annee) {
@@ -1403,16 +1473,9 @@ async function loadDistrictDashboard() {
         ascByEspc[a.espc_id].push(a);
     });
 
-    const ascColumns = ascRows.map(a => ({
-        id: a.asc_id,
-        parentId: a.espc_id,
-        label: 'ASC ' + a.asc_nom,
-        name: a.asc_nom
-    }));
-
     const headers = ['<th>ESPC</th>']
         .concat(listFamilles.map(f => `<th>${htmlEscape(f.nom_famille)}</th>`))
-        .concat(ascColumns.map(a => `<th>${htmlEscape(a.label)}</th>`));
+        .concat('<th>ICCM</th>');
     document.getElementById('dashboard-head').innerHTML = '<tr>' + headers.join('') + '</tr>';
 
     const rowsHtml = districtEspcs.map(espc => {
@@ -1421,13 +1484,13 @@ async function loadDistrictDashboard() {
             return renderDashboardCell(stat, espc.id, f.id, `${f.nom_famille} - ${espc.nom_entite}`, selectedM, selectedA);
         }).join('');
 
-        const ascCells = ascColumns.map(a => {
-            if (Number(a.parentId) !== Number(espc.id)) {
-                return '<td class="dash-cell dash-none">-</td>';
-            }
-            const stat = statMap[`${a.id}:${ascFamille.id}`];
-            return renderDashboardCell(stat, a.id, ascFamille.id, `${ascFamille.nom_famille} - ${a.name}`, selectedM, selectedA);
-        }).join('');
+        const ascCells = renderDashboardIccmCell(
+            ascByEspc[espc.id] || [],
+            statMap,
+            ascFamille,
+            selectedM,
+            selectedA
+        );
 
         return `<tr><td><b>${htmlEscape(espc.nom_entite)}</b></td>${familyCells}${ascCells}</tr>`;
     }).join('');
