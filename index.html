@@ -120,6 +120,7 @@
             .dashboard-table { min-width:1000px; }
             .iccm-cell { min-width:190px; }
         }
+    .clinical-card{margin:20px 0;padding:20px;background:#fff;border:1px solid #dce3e9;border-radius:10px}.clinical-card label{display:inline-flex;flex-direction:column;gap:5px;margin:6px}.clinical-card input,.clinical-card select{padding:8px}.clinical-card table{border-collapse:collapse;width:100%;margin:10px 0}.clinical-card th,.clinical-card td{border:1px solid #dbe3ea;padding:8px;text-align:left}.clinical-card th{background:#edf3f6}.clinical-quick{display:flex;gap:8px;align-items:end;flex-wrap:wrap}.clinical-total{font-weight:700;background:#eef5f1}
     </style>
 </head>
 <body>
@@ -150,6 +151,7 @@
             <button onclick="location.reload()" class="logout-btn">QUITTER</button>
         </div>
 
+        <div id="clinical-home"></div>
         <!-- Liste des rapports -->
         <div id="agent-home">
             <h3 style="color:var(--primary); border-bottom:2px solid var(--success); padding-bottom:5px;">Mes rapports a saisir</h3>
@@ -365,6 +367,8 @@
     </div>
 </div>
 
+<script src="/dispensation_summary.js"></script>
+<script src="/clinical-ui.js"></script>
 <script>
 const API_URL = ['localhost', '127.0.0.1'].includes(window.location.hostname)
     ? "http://localhost:3000/api/query"
@@ -374,7 +378,7 @@ async function neonQuery(sql, params = []) {
     try {
         const res = await fetch(API_URL, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: { 'Content-Type': 'application/json', Authorization: 'Bearer '+window.clinicalToken },
             body: JSON.stringify({ query: sql, params })
         });
         if (!res.ok) { const e = await res.json(); console.error("Erreur serveur:", e); return []; }
@@ -408,28 +412,21 @@ let districtEspcs = [], districtReturnEspcId = null;
 async function init() {
     loader(true);
     try {
-        const ents = await neonQuery(`
-            SELECT id, nom_entite, role
-            FROM entites e
-            WHERE (e.role = 'USER' AND NOT EXISTS (
-                SELECT 1
-                FROM agents_asc a
-                WHERE a.code_asc = e.code_structure OR e.nom_entite ILIKE 'ASC:%'
-            ))
-               OR e.role = 'ADMIN'
-            ORDER BY CASE WHEN e.role = 'ADMIN' THEN 0 ELSE 1 END, e.nom_entite
-        `);
+        const boot=await fetch('/api/clinical/bootstrap').then(r=>r.json());
+        if(!boot.ok)throw new Error(boot.error);
+        window.clinicalStructures=boot.structures;
+        const ents=boot.structures;
         const sel = document.getElementById('sel-structure');
         sel.innerHTML = ents.length > 0
             ? '<option value="">-- Choisissez votre ESPC ou le District --</option>' + ents.map(e => `<option value="${e.id}">${e.role === 'ADMIN' ? 'DISTRICT SANITAIRE DE TOUMODI' : e.nom_entite}</option>`).join('')
             : '<option value="">Aucun centre trouve</option>';
 
-        const params = await neonQuery("SELECT cle, valeur FROM parametres");
+        const params = boot.params;
         currentM = params.find(p => p.cle === 'mois_actif')?.valeur || "??";
         currentA = params.find(p => p.cle === 'annee_active')?.valeur || "????";
         document.getElementById('display-date').innerText = currentM + " / " + currentA;
 
-        listFamilles = await neonQuery("SELECT * FROM familles ORDER BY nom_famille");
+        listFamilles = boot.families;
     } finally {
         loader(false);
     }
@@ -443,7 +440,9 @@ async function login() {
     if (!id || !pwd) { msg.innerText = "Veuillez remplir tous les champs"; return; }
 
     loader(true);
-    const res = await neonQuery("SELECT * FROM entites WHERE id = $1::integer AND mot_de_passe = $2", [id, pwd]);
+    const auth=await fetch('/api/clinical/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id,password:pwd})}).then(r=>r.json()).catch(()=>({error:'Connexion impossible'}));
+    window.clinicalToken=auth.token||'';
+    const res=auth.ok?[auth.user]:[];
     loader(false);
 
     if (res.length > 0) {
@@ -452,6 +451,8 @@ async function login() {
         document.getElementById('app-zone').classList.remove('no-disp');
         document.getElementById('display-name').innerText = isDistrict() ? 'DISTRICT SANITAIRE DE TOUMODI' : user.nom_entite;
         isDistrict() ? await showDistrictHome() : showHome();
+        document.getElementById('pass').value='';
+        await clinicalHome(user,currentM,currentA);
     } else {
         msg.innerText = "Mot de passe incorrect !";
     }
@@ -1473,7 +1474,8 @@ async function loadDistrictDashboard() {
         ascByEspc[a.espc_id].push(a);
     });
 
-    const headers = ['<th>ESPC</th>']
+    const clinicalStatus=await clinicalStatuses(selectedM,selectedA);
+    const headers = ['<th>ESPC</th>','<th>File active</th>']
         .concat(listFamilles.map(f => `<th>${htmlEscape(f.nom_famille)}</th>`))
         .concat('<th>ICCM</th>');
     document.getElementById('dashboard-head').innerHTML = '<tr>' + headers.join('') + '</tr>';
@@ -1492,7 +1494,7 @@ async function loadDistrictDashboard() {
             selectedA
         );
 
-        return `<tr><td><b>${htmlEscape(espc.nom_entite)}</b></td>${familyCells}${ascCells}</tr>`;
+        return `<tr><td><b>${htmlEscape(espc.nom_entite)}</b></td>${clinicalStatusCell(espc,clinicalStatus,selectedM,selectedA)}${familyCells}${ascCells}</tr>`;
     }).join('');
 
     document.getElementById('dashboard-body').innerHTML = rowsHtml || '<tr><td>Aucun ESPC trouve.</td></tr>';

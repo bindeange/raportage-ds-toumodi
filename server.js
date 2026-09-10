@@ -29,7 +29,9 @@ const pool = new Pool({
 const app = express();
 app.use(cors());
 app.use(express.json({ limit: '50mb' }));
-app.use(express.static(path.join(__dirname)));
+app.get('/', (_req,res)=>res.sendFile(path.join(__dirname,'index.html')));
+app.get('/index.html', (_req,res)=>res.sendFile(path.join(__dirname,'index.html')));
+for(const asset of ['clinical-ui.js','dispensation_summary.js'])app.get('/'+asset,(_req,res)=>res.sendFile(path.join(__dirname,asset)));
 
 app.use((req, _res, next) => {
     if (req.path.startsWith('/api/')) {
@@ -39,7 +41,8 @@ app.use((req, _res, next) => {
             path: req.path,
             query: req.query,
             bodyKeys: req.body && typeof req.body === 'object' ? Object.keys(req.body) : [],
-            bodyPreview: JSON.stringify(req.body || {}).slice(0, 1000)
+            // Never log passwords or patient information.
+            bodyPreview: '[redacted]'
         };
         fs.appendFile(path.join(__dirname, 'sync-debug.log'), JSON.stringify(entry) + '\n', () => {});
     }
@@ -84,6 +87,8 @@ const NEON_COLUMNS = {
     livraisons_district: ['id', 'code_structure', 'code_med', 'quantite_livree', 'mois', 'annee', 'num_facture', 'date_livraison', 'type_livraison', 'reference_livraison'],
     livraisons_urgentes: ['id', 'code_structure', 'code_med', 'medicament_id', 'quantite_livree', 'mois', 'annee', 'num_facture', 'date_livraison', 'motif', 'reference_livraison', 'created_at']
 };
+
+const clinical=require('./clinical-api')(app,pool,DATABASE_URL,Object.keys(NEON_COLUMNS));
 
 function normalizeRecord(table, record) {
     const normalized = { ...record };
@@ -192,7 +197,7 @@ app.post('/api/query', async (req, res) => {
         return res.status(400).json({ error: 'Requête invalide' });
     }
     try {
-        const result = await pool.query(query, params);
+        const result = await clinical.query(req, query, params);
         res.json({ rows: result.rows });
     } catch (err) {
         console.error('❌ Erreur SQL :', err.message);
