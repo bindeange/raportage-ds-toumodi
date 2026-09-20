@@ -122,6 +122,7 @@
         }
     .clinical-card{margin:20px 0;padding:20px;background:#fff;border:1px solid #dce3e9;border-radius:10px}.clinical-card label{display:inline-flex;flex-direction:column;gap:5px;margin:6px}.clinical-card input,.clinical-card select{padding:8px}.clinical-card table{border-collapse:collapse;width:100%;margin:10px 0}.clinical-card th,.clinical-card td{border:1px solid #dbe3ea;padding:8px;text-align:left}.clinical-card th{background:#edf3f6}.clinical-quick{display:flex;gap:8px;align-items:end;flex-wrap:wrap}.clinical-total{font-weight:700;background:#eef5f1}
     </style>
+<link rel="stylesheet" href="/portal.css?v=20260916">
 </head>
 <body>
 
@@ -129,15 +130,20 @@
 
 <div class="container">
 
+    <section id="public-dashboard" aria-label="Tableau de bord du district">
+      <header class="portal-hero"><div><p class="eyebrow">DISTRICT SANITAIRE DE TOUMODI</p><h1>Tableau de bord</h1><p>Suivez les rapports du district et accédez à votre espace de validation.</p></div><a href="#login-zone" class="portal-link">Ouvrir mon espace →</a></header>
+      <div class="portal-filters"><label>Mois<select id="public-month"></select></label><label>Année<input id="public-year" type="number" min="2020" max="2100"></label><button id="public-refresh" type="button">Actualiser</button></div>
+      <div id="public-result" aria-live="polite">Chargement du suivi…</div>
+    </section>
     <!-- CONNEXION -->
     <div id="login-zone" class="card">
         <h2 style="text-align:center; color:var(--primary);">SYGESS TOUMODI</h2>
-        <p style="text-align:center; color:#7f8c8d;">Portail de saisie des rapports mensuels</p>
+        <p style="text-align:center; color:#7f8c8d;">Accès à la saisie et à la validation des rapports</p>
         <label><b>SELECTIONNEZ VOTRE ESPC :</b></label>
         <select id="sel-structure"><option>Chargement des centres...</option></select>
         <label><b>MOT DE PASSE :</b></label>
         <input type="password" id="pass" placeholder="Entrez votre code secret">
-        <button onclick="login()" class="btn-login">ACCEDER AU PORTAIL</button>
+        <button onclick="login()" class="btn-login">OUVRIR MON ESPACE DE VALIDATION</button>
         <p id="login-msg" style="color:red; text-align:center; font-weight:bold;"></p>
     </div>
 
@@ -151,7 +157,8 @@
             <button onclick="location.reload()" class="logout-btn">QUITTER</button>
         </div>
 
-        <div id="clinical-home"></div>
+        <nav class="portal-nav" aria-label="Espace de travail"><button onclick="showHome()">Rapports et validation</button><button onclick="clinicalHome(user,currentM,currentA)">File active</button></nav>
+        <div id="clinical-home" class="no-disp"></div>
         <!-- Liste des rapports -->
         <div id="agent-home">
             <h3 style="color:var(--primary); border-bottom:2px solid var(--success); padding-bottom:5px;">Mes rapports a saisir</h3>
@@ -368,7 +375,9 @@
 </div>
 
 <script src="/dispensation_summary.js"></script>
-<script src="/clinical-ui.js"></script>
+<script src="/clinical-fields.js?v=20260916"></script>
+<script src="/clinical-ui.js?v=20260916"></script>
+<script src="/portal-home.js?v=20260916"></script>
 <script>
 const API_URL = ['localhost', '127.0.0.1'].includes(window.location.hostname)
     ? "http://localhost:3000/api/query"
@@ -427,6 +436,7 @@ async function init() {
         document.getElementById('display-date').innerText = currentM + " / " + currentA;
 
         listFamilles = boot.families;
+        await portalHome(boot,currentM,currentA);
     } finally {
         loader(false);
     }
@@ -452,7 +462,7 @@ async function login() {
         document.getElementById('display-name').innerText = isDistrict() ? 'DISTRICT SANITAIRE DE TOUMODI' : user.nom_entite;
         isDistrict() ? await showDistrictHome() : showHome();
         document.getElementById('pass').value='';
-        await clinicalHome(user,currentM,currentA);
+        document.getElementById('public-dashboard').classList.add('no-disp');
     } else {
         msg.innerText = "Mot de passe incorrect !";
     }
@@ -468,6 +478,7 @@ function isLockedReportStatus(status) {
 
 // 3. Liste des rapports
 async function showHome() {
+    document.getElementById('clinical-home').classList.add('no-disp');
     if (isDistrict()) {
         showDistrictHome();
         return;
@@ -575,6 +586,7 @@ async function viewAscReport(entiteId, familleId, title, mois, annee) {
 }
 
 async function showDistrictHome(options = {}) {
+    document.getElementById('clinical-home').classList.add('no-disp');
     districtSelectedEntite = null;
     document.getElementById('agent-home').classList.add('no-disp');
     document.getElementById('saisie-zone').classList.add('no-disp');

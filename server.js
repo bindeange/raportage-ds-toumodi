@@ -31,7 +31,7 @@ app.use(cors());
 app.use(express.json({ limit: '50mb' }));
 app.get('/', (_req,res)=>res.sendFile(path.join(__dirname,'index.html')));
 app.get('/index.html', (_req,res)=>res.sendFile(path.join(__dirname,'index.html')));
-for(const asset of ['clinical-ui.js','dispensation_summary.js'])app.get('/'+asset,(_req,res)=>res.sendFile(path.join(__dirname,asset)));
+for(const asset of ['clinical-ui.js','clinical-fields.js','portal-home.js','portal.css','dispensation_summary.js'])app.get('/'+asset,(_req,res)=>res.sendFile(path.join(__dirname,asset)));
 
 app.use((req, _res, next) => {
     if (req.path.startsWith('/api/')) {
