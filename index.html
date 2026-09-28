@@ -122,29 +122,32 @@
         }
     .clinical-card{margin:20px 0;padding:20px;background:#fff;border:1px solid #dce3e9;border-radius:10px}.clinical-card label{display:inline-flex;flex-direction:column;gap:5px;margin:6px}.clinical-card input,.clinical-card select{padding:8px}.clinical-card table{border-collapse:collapse;width:100%;margin:10px 0}.clinical-card th,.clinical-card td{border:1px solid #dbe3ea;padding:8px;text-align:left}.clinical-card th{background:#edf3f6}.clinical-quick{display:flex;gap:8px;align-items:end;flex-wrap:wrap}.clinical-total{font-weight:700;background:#eef5f1}
     </style>
-<link rel="stylesheet" href="/portal.css?v=20260916">
+<link rel="stylesheet" href="/portal.css?v=20260920">
 </head>
-<body>
+<body class="is-login">
 
 <div id="loader"><div class="spinner">Chargement...</div></div>
 
 <div class="container">
 
-    <section id="public-dashboard" aria-label="Tableau de bord du district">
-      <header class="portal-hero"><div><p class="eyebrow">DISTRICT SANITAIRE DE TOUMODI</p><h1>Tableau de bord</h1><p>Suivez les rapports du district et accédez à votre espace de validation.</p></div><a href="#login-zone" class="portal-link">Ouvrir mon espace →</a></header>
-      <div class="portal-filters"><label>Mois<select id="public-month"></select></label><label>Année<input id="public-year" type="number" min="2020" max="2100"></label><button id="public-refresh" type="button">Actualiser</button></div>
-      <div id="public-result" aria-live="polite">Chargement du suivi…</div>
-    </section>
-    <!-- CONNEXION -->
+    <!-- PAGE 1 : ACCÈS -->
     <div id="login-zone" class="card">
-        <h2 style="text-align:center; color:var(--primary);">SYGESS TOUMODI</h2>
-        <p style="text-align:center; color:#7f8c8d;">Accès à la saisie et à la validation des rapports</p>
-        <label><b>SELECTIONNEZ VOTRE ESPC :</b></label>
-        <select id="sel-structure"><option>Chargement des centres...</option></select>
-        <label><b>MOT DE PASSE :</b></label>
-        <input type="password" id="pass" placeholder="Entrez votre code secret">
-        <button onclick="login()" class="btn-login">OUVRIR MON ESPACE DE VALIDATION</button>
-        <p id="login-msg" style="color:red; text-align:center; font-weight:bold;"></p>
+        <div class="login-brand">
+            <p class="eyebrow">DISTRICT SANITAIRE DE TOUMODI</p>
+            <h1>SYGESS TOUMODI</h1>
+            <p>Accès à la saisie, à la validation des rapports et au tableau de bord.</p>
+        </div>
+        <form id="login-form" onsubmit="login(event); return false;" novalidate>
+            <label for="sel-structure">Structure</label>
+            <select id="sel-structure" required><option value="">Chargement des structures…</option></select>
+            <label for="pass">Mot de passe</label>
+            <div class="pw-field">
+                <input type="password" id="pass" autocomplete="current-password" placeholder="Entrez votre mot de passe" required>
+                <button type="button" class="pw-toggle" id="pw-toggle" aria-controls="pass" aria-pressed="false">Afficher</button>
+            </div>
+            <button type="submit" id="btn-login" class="btn-login">Ouvrir mon espace</button>
+            <p id="login-msg" class="login-msg" role="alert"></p>
+        </form>
     </div>
 
     <!-- APPLICATION -->
@@ -157,7 +160,21 @@
             <button onclick="location.reload()" class="logout-btn">QUITTER</button>
         </div>
 
-        <nav class="portal-nav" aria-label="Espace de travail"><button onclick="showHome()">Rapports et validation</button><button onclick="clinicalHome(user,currentM,currentA)">File active</button></nav>
+        <nav class="portal-nav" aria-label="Espace de travail"><button id="nav-dashboard" onclick="showDashboard()">Tableau de bord</button><button id="nav-reports" onclick="showHome()">Rapports et validation</button><button id="nav-clinical" onclick="clinicalHome(user,currentM,currentA)">File active</button></nav>
+
+        <!-- PAGE 2 : TABLEAU DE BORD -->
+        <section id="dashboard-zone" class="no-disp" aria-label="Tableau de bord">
+            <div class="print-only"><h2>SYGESS TOUMODI — Tableau de bord PVVIH</h2></div>
+            <header class="portal-hero"><div><p class="eyebrow">DISTRICT SANITAIRE DE TOUMODI</p><h1>Tableau de bord</h1><p>Situation des personnes vivant avec le VIH sous ARV, par localité et pour l’ensemble du district, avec accès direct aux pages de rapportage.</p></div></header>
+            <div class="portal-filters">
+                <label>Période<select id="dash-period"></select></label>
+                <label>Localité<select id="dash-scope"></select></label>
+                <button id="dash-refresh" type="button">Actualiser</button>
+                <button id="dash-print" type="button">Imprimer</button>
+            </div>
+            <div id="dash-result" aria-live="polite">Chargement…</div>
+        </section>
+
         <div id="clinical-home" class="no-disp"></div>
         <!-- Liste des rapports -->
         <div id="agent-home">
@@ -174,7 +191,7 @@
         <div id="district-zone" class="no-disp">
             <h3 style="color:var(--primary); border-bottom:2px solid var(--success); padding-bottom:5px;">Suivi des rapports ESPC</h3>
             <div class="district-menu">
-                <button id="district-tab-dashboard" class="active" onclick="showDistrictDashboard()">Tableau de bord</button>
+                <button id="district-tab-dashboard" class="active" onclick="showDistrictDashboard()">Vue d’ensemble</button>
                 <button id="district-tab-rapports" onclick="showDistrictReportsView()">Rapports</button>
                 <button id="district-tab-bilan" onclick="showDistrictBilanView()">Bilan</button>
                 <button id="district-tab-livraisons" onclick="showDistrictLivraisonsView()">Livraisons</button>
@@ -375,13 +392,11 @@
 </div>
 
 <script src="/dispensation_summary.js"></script>
-<script src="/clinical-fields.js?v=20260916"></script>
-<script src="/clinical-ui.js?v=20260916"></script>
-<script src="/portal-home.js?v=20260916"></script>
+<script src="/clinical-fields.js?v=20260920"></script>
+<script src="/clinical-ui.js?v=20260920"></script>
+<script src="/dashboard.js?v=20260920"></script>
 <script>
-const API_URL = ['localhost', '127.0.0.1'].includes(window.location.hostname)
-    ? "http://localhost:3000/api/query"
-    : "/api/query";
+const API_URL = "/api/query";
 
 async function neonQuery(sql, params = []) {
     try {
@@ -390,6 +405,7 @@ async function neonQuery(sql, params = []) {
             headers: { 'Content-Type': 'application/json', Authorization: 'Bearer '+window.clinicalToken },
             body: JSON.stringify({ query: sql, params })
         });
+        if (res.status === 401) { sessionExpired(); return []; }
         if (!res.ok) { const e = await res.json(); console.error("Erreur serveur:", e); return []; }
         const data = await res.json();
         return data.rows || [];
@@ -417,55 +433,105 @@ let currentReadOnly = false, currentReportStatus = null, districtSelectedEntite 
 let currentReportUser = null, currentReportM = null, currentReportA = null;
 let districtEspcs = [], districtReturnEspcId = null;
 
-// 1. Initialisation
+// 1. Initialisation : page d'accès (liste des structures uniquement)
 async function init() {
+    const sel = document.getElementById('sel-structure');
     loader(true);
     try {
-        const boot=await fetch('/api/clinical/bootstrap').then(r=>r.json());
-        if(!boot.ok)throw new Error(boot.error);
-        window.clinicalStructures=boot.structures;
-        const ents=boot.structures;
-        const sel = document.getElementById('sel-structure');
+        const boot = await fetch('/api/clinical/bootstrap').then(r => r.json());
+        if (!boot.ok) throw new Error(boot.error);
+        const ents = boot.structures;
         sel.innerHTML = ents.length > 0
-            ? '<option value="">-- Choisissez votre ESPC ou le District --</option>' + ents.map(e => `<option value="${e.id}">${e.role === 'ADMIN' ? 'DISTRICT SANITAIRE DE TOUMODI' : e.nom_entite}</option>`).join('')
-            : '<option value="">Aucun centre trouve</option>';
-
-        const params = boot.params;
-        currentM = params.find(p => p.cle === 'mois_actif')?.valeur || "??";
-        currentA = params.find(p => p.cle === 'annee_active')?.valeur || "????";
-        document.getElementById('display-date').innerText = currentM + " / " + currentA;
-
-        listFamilles = boot.families;
-        await portalHome(boot,currentM,currentA);
+            ? '<option value="">-- Choisissez votre ESPC ou le District --</option>' + ents.map(e => `<option value="${e.id}">${htmlEscape(e.role === 'ADMIN' ? 'DISTRICT SANITAIRE DE TOUMODI' : e.nom_entite)}</option>`).join('')
+            : '<option value="">Aucune structure trouvée</option>';
+    } catch (e) {
+        sel.innerHTML = '<option value="">Liste indisponible</option>';
+        document.getElementById('login-msg').innerText = "Serveur injoignable. Réessayez dans un instant.";
     } finally {
         loader(false);
     }
+    document.getElementById('pw-toggle').onclick = (ev) => {
+        const field = document.getElementById('pass'), show = field.type === 'password';
+        field.type = show ? 'text' : 'password';
+        ev.currentTarget.textContent = show ? 'Masquer' : 'Afficher';
+        ev.currentTarget.setAttribute('aria-pressed', String(show));
+    };
 }
 
-// 2. Connexion
-async function login() {
+// 2. Connexion -> page 2 (tableau de bord)
+async function login(event) {
+    if (event) event.preventDefault();
     const id  = document.getElementById('sel-structure').value;
     const pwd = document.getElementById('pass').value;
     const msg = document.getElementById('login-msg');
-    if (!id || !pwd) { msg.innerText = "Veuillez remplir tous les champs"; return; }
+    const button = document.getElementById('btn-login');
+    msg.innerText = '';
+    if (!id || !pwd) { msg.innerText = "Choisissez votre structure et saisissez le mot de passe."; return; }
 
+    button.disabled = true;
     loader(true);
-    const auth=await fetch('/api/clinical/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id,password:pwd})}).then(r=>r.json()).catch(()=>({error:'Connexion impossible'}));
-    window.clinicalToken=auth.token||'';
-    const res=auth.ok?[auth.user]:[];
-    loader(false);
+    try {
+        const auth = await fetch('/api/clinical/login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id, password: pwd }) })
+            .then(r => r.json()).catch(() => ({ error: 'Connexion impossible. Vérifiez votre réseau.' }));
+        if (!auth.ok) { msg.innerText = auth.error || "Mot de passe incorrect !"; return; }
 
-    if (res.length > 0) {
-        user = res[0];
+        window.clinicalToken = auth.token;
+        user = auth.user;
+        // Contexte de session (structures, période active, familles) : uniquement après authentification.
+        const ctx = await fetch('/api/clinical/context', { headers: { Authorization: 'Bearer ' + auth.token } }).then(r => r.json());
+        if (!ctx.ok) throw new Error(ctx.error || 'Chargement impossible.');
+        window.clinicalStructures = ctx.structures;
+        currentM = ctx.params.find(p => p.cle === 'mois_actif')?.valeur || "??";
+        currentA = ctx.params.find(p => p.cle === 'annee_active')?.valeur || "????";
+        listFamilles = ctx.families;
+        document.getElementById('display-date').innerText = currentM + " / " + currentA;
+        document.getElementById('display-name').innerText = isDistrict() ? 'DISTRICT SANITAIRE DE TOUMODI' : user.nom_entite;
+
+        document.getElementById('pass').value = '';
+        document.body.classList.remove('is-login');
         document.getElementById('login-zone').classList.add('no-disp');
         document.getElementById('app-zone').classList.remove('no-disp');
-        document.getElementById('display-name').innerText = isDistrict() ? 'DISTRICT SANITAIRE DE TOUMODI' : user.nom_entite;
-        isDistrict() ? await showDistrictHome() : showHome();
-        document.getElementById('pass').value='';
-        document.getElementById('public-dashboard').classList.add('no-disp');
-    } else {
-        msg.innerText = "Mot de passe incorrect !";
+        await showDashboard();
+    } catch (e) {
+        window.clinicalToken = '';
+        user = null;
+        msg.innerText = e.message || "Connexion impossible.";
+    } finally {
+        loader(false);
+        button.disabled = false;
     }
+}
+
+// Session expirée : on revient à la page d'accès.
+let sessionEnded = false;
+function sessionExpired() {
+    if (sessionEnded) return;
+    sessionEnded = true;
+    alert("Votre session a expiré. Veuillez vous reconnecter.");
+    location.reload();
+}
+
+// Navigation entre la page 2 (tableau de bord) et les pages de rapportage
+function setNav(name) {
+    for (const [id, key] of [['nav-dashboard', 'dashboard'], ['nav-reports', 'reports'], ['nav-clinical', 'clinical']]) {
+        const button = document.getElementById(id);
+        if (!button) continue;
+        if (key === name) button.setAttribute('aria-current', 'page'); else button.removeAttribute('aria-current');
+    }
+}
+
+async function showDashboard() {
+    for (const id of ['clinical-home', 'agent-home', 'district-zone', 'saisie-zone']) document.getElementById(id).classList.add('no-disp');
+    document.getElementById('dashboard-zone').classList.remove('no-disp');
+    setNav('dashboard');
+    await dashboardHome(user, currentM, currentA);
+}
+
+function printDashboard() {
+    document.body.classList.add('print-dashboard');
+    const cleanup = () => { document.body.classList.remove('print-dashboard'); window.removeEventListener('afterprint', cleanup); };
+    window.addEventListener('afterprint', cleanup);
+    window.print();
 }
 
 function isDistrict() {
@@ -479,6 +545,8 @@ function isLockedReportStatus(status) {
 // 3. Liste des rapports
 async function showHome() {
     document.getElementById('clinical-home').classList.add('no-disp');
+    document.getElementById('dashboard-zone').classList.add('no-disp');
+    setNav('reports');
     if (isDistrict()) {
         showDistrictHome();
         return;
@@ -587,6 +655,8 @@ async function viewAscReport(entiteId, familleId, title, mois, annee) {
 
 async function showDistrictHome(options = {}) {
     document.getElementById('clinical-home').classList.add('no-disp');
+    document.getElementById('dashboard-zone').classList.add('no-disp');
+    setNav('reports');
     districtSelectedEntite = null;
     document.getElementById('agent-home').classList.add('no-disp');
     document.getElementById('saisie-zone').classList.add('no-disp');
@@ -597,7 +667,7 @@ async function showDistrictHome(options = {}) {
     const espcSel = document.getElementById('district-espc');
     const keepEspc = options.keepEspcId || districtReturnEspcId || espcSel.value || '';
     espcSel.innerHTML = '<option value="">-- Choisir une structure --</option>' +
-        districtEspcs.map(e => `<option value="${e.id}">${e.nom_entite}</option>`).join('');
+        districtEspcs.map(e => `<option value="${e.id}">${htmlEscape(e.nom_entite)}</option>`).join('');
     if (keepEspc && districtEspcs.some(e => Number(e.id) === Number(keepEspc))) {
         espcSel.value = String(keepEspc);
     }
@@ -611,25 +681,29 @@ async function showDistrictHome(options = {}) {
     const sel = document.getElementById('district-programme');
     if (sel) {
         sel.innerHTML = '<option value="">-- Tous les programmes --</option>' +
-            listFamilles.map(f => `<option value="${f.id}">${f.nom_famille}</option>`).join('');
+            listFamilles.map(f => `<option value="${f.id}">${htmlEscape(f.nom_famille)}</option>`).join('');
     }
     const bilanProg = document.getElementById('bilan-programme');
     bilanProg.innerHTML = '<option value="">-- Choisissez un programme --</option>' +
-        listFamilles.map(f => `<option value="${f.id}">${f.nom_famille}</option>`).join('');
+        listFamilles.map(f => `<option value="${f.id}">${htmlEscape(f.nom_famille)}</option>`).join('');
     const livraisonsEspc = document.getElementById('livraisons-espc');
     livraisonsEspc.innerHTML = '<option value="">-- Tous les ESPC --</option>' +
-        districtEspcs.map(e => `<option value="${e.id}">${e.nom_entite}</option>`).join('');
+        districtEspcs.map(e => `<option value="${e.id}">${htmlEscape(e.nom_entite)}</option>`).join('');
     const livraisonsProg = document.getElementById('livraisons-programme');
     livraisonsProg.innerHTML = '<option value="">-- Tous les programmes --</option>' +
-        listFamilles.map(f => `<option value="${f.id}">${f.nom_famille}</option>`).join('');
+        listFamilles.map(f => `<option value="${f.id}">${htmlEscape(f.nom_famille)}</option>`).join('');
     document.getElementById('district-body').innerHTML = '<tr><td colspan="3">Choisissez une structure pour afficher ses programmes.</td></tr>';
     document.getElementById('bilan-body').innerHTML = '<tr><td colspan="8">Choisissez un programme pour afficher le bilan.</td></tr>';
     document.getElementById('bilan-indic-head').innerHTML = '<tr><th>Indicateur</th><th>Valeur</th></tr>';
     document.getElementById('bilan-indic-body').innerHTML = '<tr><td colspan="2">Choisissez un programme pour afficher le bilan des indicateurs.</td></tr>';
     document.getElementById('livraisons-body').innerHTML = '<tr><td colspan="9">Choisissez une periode pour afficher les livraisons.</td></tr>';
-    await loadDistrictDashboard();
-    if (options.view === 'rapports') {
-        showDistrictReportsView();
+    // Ouverture directe d'une page depuis le tableau de bord (page 2)
+    const views = { rapports: showDistrictReportsView, bilan: showDistrictBilanView, livraisons: showDistrictLivraisonsView, period: showPeriodManager, passwords: showPasswordManager };
+    if (views[options.view]) {
+        await views[options.view]();
+    } else {
+        setDistrictTab('dashboard');
+        await loadDistrictDashboard();
     }
 }
 
@@ -730,7 +804,7 @@ async function showDistrictReportsView() {
     const espcSel = document.getElementById('district-espc');
     if (espcSel && espcSel.options.length <= 1) {
         espcSel.innerHTML = '<option value="">-- Choisir une structure --</option>' +
-            districtEspcs.map(e => `<option value="${e.id}">${e.nom_entite}</option>`).join('');
+            districtEspcs.map(e => `<option value="${e.id}">${htmlEscape(e.nom_entite)}</option>`).join('');
     }
     await loadDistrictReports();
 }
@@ -740,7 +814,7 @@ async function showDistrictBilanView() {
     fillDistrictPeriodSelect('bilan-period');
     if (!document.getElementById('bilan-programme').innerHTML.trim()) {
         document.getElementById('bilan-programme').innerHTML = '<option value="">-- Choisissez un programme --</option>' +
-            listFamilles.map(f => `<option value="${f.id}">${f.nom_famille}</option>`).join('');
+            listFamilles.map(f => `<option value="${f.id}">${htmlEscape(f.nom_famille)}</option>`).join('');
     }
     if (document.getElementById('bilan-programme').value) {
         await loadDistrictBilan();
@@ -753,11 +827,11 @@ async function showDistrictLivraisonsView() {
     fillDistrictPeriodSelect('livraisons-period');
     if (!document.getElementById('livraisons-espc').innerHTML.trim()) {
         document.getElementById('livraisons-espc').innerHTML = '<option value="">-- Tous les ESPC --</option>' +
-            districtEspcs.map(e => `<option value="${e.id}">${e.nom_entite}</option>`).join('');
+            districtEspcs.map(e => `<option value="${e.id}">${htmlEscape(e.nom_entite)}</option>`).join('');
     }
     if (!document.getElementById('livraisons-programme').innerHTML.trim()) {
         document.getElementById('livraisons-programme').innerHTML = '<option value="">-- Tous les programmes --</option>' +
-            listFamilles.map(f => `<option value="${f.id}">${f.nom_famille}</option>`).join('');
+            listFamilles.map(f => `<option value="${f.id}">${htmlEscape(f.nom_famille)}</option>`).join('');
     }
     await loadDistrictLivraisons();
 }

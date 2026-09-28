@@ -27,11 +27,29 @@ const pool = new Pool({
 });
 
 const app = express();
-app.use(cors());
-app.use(express.json({ limit: '50mb' }));
+// Render place l'application derrière un proxy : sans cela, req.ip est l'adresse du proxy
+// et la limitation des tentatives de connexion serait partagée entre tous les utilisateurs.
+app.set('trust proxy', 1);
+app.disable('x-powered-by');
+app.use((_req, res, next) => {
+    res.set({
+        'X-Content-Type-Options': 'nosniff',
+        'X-Frame-Options': 'DENY',
+        'Referrer-Policy': 'no-referrer',
+        'Permissions-Policy': 'camera=(), microphone=(), geolocation=()'
+    });
+    next();
+});
+// L'interface est servie par ce même serveur (même origine) : CORS n'est activé que si
+// CORS_ORIGINS (liste séparée par des virgules) est défini explicitement.
+const corsOrigins = (process.env.CORS_ORIGINS || '').split(',').map((o) => o.trim()).filter(Boolean);
+if (corsOrigins.length) app.use(cors({ origin: corsOrigins }));
+// Corps volumineux uniquement pour les routes de synchronisation ; 1 Mo partout ailleurs.
+app.use(['/api/sync', '/api/clinical/sync'], express.json({ limit: '50mb' }));
+app.use(express.json({ limit: '1mb' }));
 app.get('/', (_req,res)=>res.sendFile(path.join(__dirname,'index.html')));
 app.get('/index.html', (_req,res)=>res.sendFile(path.join(__dirname,'index.html')));
-for(const asset of ['clinical-ui.js','clinical-fields.js','portal-home.js','portal.css','dispensation_summary.js'])app.get('/'+asset,(_req,res)=>res.sendFile(path.join(__dirname,asset)));
+for(const asset of ['clinical-ui.js','clinical-fields.js','dashboard.js','portal.css','dispensation_summary.js'])app.get('/'+asset,(_req,res)=>res.sendFile(path.join(__dirname,asset)));
 
 app.use((req, _res, next) => {
     if (req.path.startsWith('/api/')) {
