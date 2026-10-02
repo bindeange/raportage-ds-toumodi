@@ -45,7 +45,7 @@ app.use((_req, res, next) => {
 const corsOrigins = (process.env.CORS_ORIGINS || '').split(',').map((o) => o.trim()).filter(Boolean);
 if (corsOrigins.length) app.use(cors({ origin: corsOrigins }));
 // Corps volumineux uniquement pour les routes de synchronisation ; 1 Mo partout ailleurs.
-app.use(['/api/sync', '/api/clinical/sync'], express.json({ limit: '50mb' }));
+app.use(['/api/sync', '/api/clinical/sync', '/api/clinical/import'], express.json({ limit: '50mb' }));
 app.use(express.json({ limit: '1mb' }));
 app.get('/', (_req,res)=>res.sendFile(path.join(__dirname,'index.html')));
 app.get('/index.html', (_req,res)=>res.sendFile(path.join(__dirname,'index.html')));
