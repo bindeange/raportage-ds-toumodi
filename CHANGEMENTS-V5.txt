@@ -1,0 +1,17 @@
+V5 - File active district (06/10/2026)
+
+- Choix « District sanitaire — toutes les structures » pour l’administrateur.
+- File active consolidée du district, dédoublonnée par code patient.
+- Dernière structure de dispensation + historique des structures fréquentées.
+- Perdus de vue par structure : traitement non en cours à la date de référence.
+- Décès : sortie immédiate. Transfert Out : reste actif jusqu’à la fin du traitement en cours.
+- AES et MOBILE : acceptés mais exclus de la file active et des rendez-vous.
+- Codes enfant e1 à e10 : prophylaxie, exclus de la file active.
+- Code enfant suffixe e seul : compté uniquement sous trithérapie.
+- Validation des codes : 12345/67/89/01234 ou 12345/AB/89/01234, suffixes e/e1…e10.
+- Codes invalides d’import enregistrés dans la liste « Codes en erreur ».
+- Import Excel non destructif : les cellules vides ne remplacent pas l’historique existant.
+- Tableau croisé : dimension Mouvement (Nouvelle inclusion, Décès, Transfert Out, etc.).
+- Correction d’un code patient par l’admin depuis la vue district, propagée dans l’historique de la structure.
+
+Test ciblé ajouté : test-v5-rules.cjs.

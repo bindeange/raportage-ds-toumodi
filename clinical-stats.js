@@ -94,12 +94,13 @@ function structureMetrics(reports, m, y, today) {
     const ref = today < monthEnd ? today : monthEnd; // on ne juge pas les retards dans le futur
 
     out.known = patients.length;
-    const prevActive = new Set(previous.filter(isActive).map((r) => String(r.patient_code)));
+    const prevRef=new Date(Date.UTC(py,pm,0)).toISOString().slice(0,10);
+    const prevActive = new Set(previous.filter(r=>isActive(r,prevRef)).map((r) => String(r.patient_code)));
     const nowActive = new Set();
     const monthlyByCode = new Map(monthly.map((r) => [String(r.patient_code), r]));
 
     for (const r of patients) {
-        if (!isActive(r)) continue;
+        if (!isActive(r, ref)) continue;
         const code = String(r.patient_code);
         nowActive.add(code);
         out.active++;
@@ -175,7 +176,7 @@ function trend(reports, m, y, n = 6) {
         points.unshift({
             mois: mm,
             annee: yy,
-            active: model.snapshot(reports, mm, yy).filter(isActive).length,
+            active: model.snapshot(reports, mm, yy).filter(r=>isActive(r,new Date(Date.UTC(yy,mm,0)).toISOString().slice(0,10))).length,
             nouvelles: rows.filter((r) => truth(r.nouvelle_inclusion)).length,
             sorties: rows.filter((r) => EXIT_FLAGS.some((k) => truth(r[k]))).length,
             saisi: Boolean(report)
