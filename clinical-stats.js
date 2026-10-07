@@ -94,8 +94,7 @@ function structureMetrics(reports, m, y, today) {
     const ref = today < monthEnd ? today : monthEnd; // on ne juge pas les retards dans le futur
 
     out.known = patients.length;
-    const prevRef=new Date(Date.UTC(py,pm,0)).toISOString().slice(0,10);
-    const prevActive = new Set(previous.filter(r=>isActive(r,prevRef)).map((r) => String(r.patient_code)));
+    const prevActive = new Set(previous.filter((r) => isActive(r, ref)).map((r) => String(r.patient_code)));
     const nowActive = new Set();
     const monthlyByCode = new Map(monthly.map((r) => [String(r.patient_code), r]));
 
@@ -167,16 +166,17 @@ function structureMetrics(reports, m, y, today) {
 }
 
 // Évolution sur n mois se terminant au mois demandé.
-function trend(reports, m, y, n = 6) {
+function trend(reports, m, y, today, n = 6) {
     const points = [];
     let mm = m, yy = y;
     for (let i = 0; i < n; i++) {
         const report = reports.find((r) => Number(r.mois) === mm && Number(r.annee) === yy);
         const rows = report?.rows_json || [];
+        const monthEnd = new Date(Date.UTC(yy, mm, 0)).toISOString().slice(0, 10), ref = today < monthEnd ? today : monthEnd;
         points.unshift({
             mois: mm,
             annee: yy,
-            active: model.snapshot(reports, mm, yy).filter(r=>isActive(r,new Date(Date.UTC(yy,mm,0)).toISOString().slice(0,10))).length,
+            active: model.snapshot(reports, mm, yy).filter((r) => isActive(r, ref)).length,
             nouvelles: rows.filter((r) => truth(r.nouvelle_inclusion)).length,
             sorties: rows.filter((r) => EXIT_FLAGS.some((k) => truth(r[k]))).length,
             saisi: Boolean(report)
@@ -208,7 +208,7 @@ function build({ structures, reports, m, y, now = new Date() }) {
         const current = rs.find((r) => Number(r.mois) === m && Number(r.annee) === y);
         const last = rs.filter((r) => Number(r.annee) * 100 + Number(r.mois) <= y * 100 + m).pop();
         const metrics = structureMetrics(rs, m, y, today);
-        const tr = trend(rs, m, y);
+        const tr = trend(rs, m, y, today);
         items.push({
             id: s.id,
             nom: s.nom_entite,

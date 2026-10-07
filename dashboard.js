@@ -137,7 +137,7 @@
             if (cur.item.status === 'NON SAISI') list.push(['warn', `Aucune saisie de file active pour ${periodLabel()}${cur.item.derniere_saisie ? ` : les effectifs reprennent la situation de ${MONTHS[cur.item.derniere_saisie.mois - 1]} ${cur.item.derniere_saisie.annee}` : ' et aucune donnée antérieure'}.`]);
             else if (cur.item.status === 'BROUILLON') list.push(['info', `La file active de ${periodLabel()} est en brouillon (non validée).`]);
         }
-        if (m.retard.ge28) list.push(['warn', `${num(m.retard.ge28)} patient(s) ont dépassé de 28 jours ou plus la fin de leur traitement et nécessitent une recherche active.`]);
+        if (m.retard.ge28) list.push(['warn', `${num(m.retard.ge28)} patient(s) ont dépassé de 28 jours ou plus la fin de leur traitement. Ils ne sont pas classés perdus de vue : à rechercher avant toute décision.`]);
         if (m.qualite.sansAge || m.qualite.sansSexe) list.push(['info', `${num(m.qualite.sansAge)} patient(s) actif(s) sans âge et ${num(m.qualite.sansSexe)} sans sexe : ils sont comptés dans le total mais restent dans « non renseigné ».`]);
         if (m.mouv.entreesSansMotif || m.mouv.sortiesSansMotif) list.push(['warn', `Mouvements sans motif enregistré : ${num(m.mouv.entreesSansMotif)} entrée(s) sans inclusion, transfert in ou retour ; ${num(m.mouv.sortiesSansMotif)} sortie(s) sans transfert out, décès, arrêt ni perte de vue.`]);
         if (m.qualite.incompletes) list.push(['info', `${num(m.qualite.incompletes)} fiche(s) du mois à compléter avant validation.`]);

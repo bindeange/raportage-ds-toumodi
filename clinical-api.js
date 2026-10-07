@@ -12,13 +12,12 @@ module.exports=function installClinical(app,pool,databaseUrl,legacyTables){
  const ready=(async()=>{
   await pool.query(`ALTER TABLE entites ADD COLUMN IF NOT EXISTS code_dhis2 text;
    CREATE TABLE IF NOT EXISTS clinical_reports(code_dhis2 text NOT NULL,mois integer NOT NULL,annee integer NOT NULL,rows_json jsonb NOT NULL DEFAULT '[]',summary_json jsonb,status text NOT NULL DEFAULT 'BROUILLON',revision integer NOT NULL DEFAULT 1,updated_at timestamptz NOT NULL DEFAULT now(),PRIMARY KEY(code_dhis2,mois,annee));
-   CREATE TABLE IF NOT EXISTS clinical_options(id integer PRIMARY KEY DEFAULT 1,payload jsonb NOT NULL);
-   CREATE TABLE IF NOT EXISTS clinical_code_errors(id bigserial PRIMARY KEY,code_dhis2 text,mois integer,annee integer,patient_code text,reason text,source text DEFAULT 'import',created_at timestamptz NOT NULL DEFAULT now());`);
+   CREATE TABLE IF NOT EXISTS clinical_options(id integer PRIMARY KEY DEFAULT 1,payload jsonb NOT NULL);`);
   // The legacy SQL endpoint uses a separate login that has no access to patient tables or passwords.
   const role='reporting_legacy_api',pw=crypto.createHmac('sha256',signingKey).update('legacy-db-login').digest('hex');
   await pool.query(`DO $$ BEGIN CREATE ROLE ${role} LOGIN NOINHERIT; EXCEPTION WHEN duplicate_object THEN NULL; END $$; ALTER ROLE ${role} PASSWORD '${pw}'; GRANT USAGE ON SCHEMA public TO ${role};`);
   for(const table of legacyTables){if(['entites','parametres'].includes(table))continue;if(!(await pool.query('SELECT to_regclass($1) AS name',[table])).rows[0].name)continue;await pool.query(`GRANT SELECT ON TABLE public.${table} TO ${role}`);if(['rapports','rapport_stock_details','rapport_indicateurs'].includes(table)){await pool.query(`GRANT INSERT,UPDATE,DELETE ON TABLE public.${table} TO ${role}`);const q=await pool.query('SELECT pg_get_serial_sequence($1,$2) AS seq',[table,'id']);if(q.rows[0]?.seq)await pool.query(`GRANT USAGE,SELECT ON SEQUENCE ${q.rows[0].seq} TO ${role}`);}}
-  await pool.query(`GRANT SELECT(id,nom_entite,login,role,code_structure,code_dhis2) ON entites TO ${role}; REVOKE ALL ON clinical_reports,clinical_options,clinical_code_errors FROM PUBLIC,${role};`);
+  await pool.query(`GRANT SELECT(id,nom_entite,login,role,code_structure,code_dhis2) ON entites TO ${role}; REVOKE ALL ON clinical_reports,clinical_options FROM PUBLIC,${role};`);
   const url=new URL(databaseUrl);url.username=role;url.password=pw;legacyPool=new Pool({connectionString:url.toString(),ssl:{rejectUnauthorized:false}});
  })();ready.catch(e=>console.error('Clinical initialization failed:',e.message));
  const allowed=s=>s&&s.role==='ADMIN'||s&&s.role==='USER'&&!/ICCM/i.test((s.nom_entite||'')+' '+(s.code_structure||''));
@@ -55,9 +54,52 @@ module.exports=function installClinical(app,pool,databaseUrl,legacyTables){
   const reports=codes.length?(await pool.query('SELECT code_dhis2,mois,annee,rows_json,status FROM clinical_reports WHERE code_dhis2=ANY($1::text[]) AND (annee<$2 OR (annee=$2 AND mois<=$3))',[codes,y,m])).rows:[];
   res.json({ok:true,scope:a.role==='ADMIN'?'district':'structure',...stats.build({structures,reports,m,y})});
  }));
- app.get('/api/clinical/district-view',route(async(req,res)=>{if(req.clinicalActor.role!=='ADMIN')throw fail('Accès district requis.',403);const [m,y]=period(req.query),structures=await listStructures(req.clinicalActor),codes=structures.map(x=>String(x.code_dhis2||'')).filter(Boolean),nameBy=new Map(structures.map(x=>[String(x.code_dhis2||''),x.nom_entite]));const reps=codes.length?(await pool.query('SELECT code_dhis2,mois,annee,rows_json,status FROM clinical_reports WHERE code_dhis2=ANY($1::text[]) AND (annee<$2 OR (annee=$2 AND mois<=$3)) ORDER BY annee,mois',[codes,y,m])).rows:[];const events=new Map();for(const rep of reps)for(const row of rep.rows_json||[]){if(!fields.validCode(row.patient_code))continue;const kind=fields.codeKind(row.patient_code);if(['aes','mobile','child_prophylaxis'].includes(kind))continue;const code=String(row.patient_code),ev={...row,code_dhis2:String(rep.code_dhis2),structure:nameBy.get(String(rep.code_dhis2))||rep.code_dhis2,mois:Number(rep.mois),annee:Number(rep.annee)};if(!events.has(code))events.set(code,[]);events.get(code).push(ev);}const ref=new Date(Date.UTC(y,m,0)).toISOString().slice(0,10),patients=[];for(const [code,evs] of events){evs.sort((a,b)=>String(a.derniere_dispensation||'').localeCompare(String(b.derniere_dispensation||''))||a.annee-b.annee||a.mois-b.mois);const latest=evs[evs.length-1],history=[];for(const e of evs){const last=history[history.length-1];if(!last||last.code_dhis2!==e.code_dhis2)history.push({code_dhis2:e.code_dhis2,structure:e.structure,derniere_dispensation:e.derniere_dispensation||null});else if(String(e.derniere_dispensation||'')>String(last.derniere_dispensation||''))last.derniere_dispensation=e.derniere_dispensation;}patients.push({...latest,patient_code:code,current_structure:latest.structure,structure_history:history,active:fields.active(latest,ref),lost:!fields.active(latest,ref)&&!fields.truth(latest.deces)});}const lostByStructure=structures.filter(x=>x.code_dhis2).map(st=>({code_dhis2:String(st.code_dhis2),structure:st.nom_entite,patients:patients.filter(p=>p.code_dhis2===String(st.code_dhis2)&&p.lost)}));const errors=(await pool.query('SELECT code_dhis2,patient_code,reason,source,created_at FROM clinical_code_errors WHERE annee=$1 AND mois=$2 ORDER BY created_at DESC LIMIT 500',[y,m])).rows;res.json({ok:true,scope:'district',patients:patients.sort((a,b)=>a.patient_code.localeCompare(b.patient_code,'fr')),active:patients.filter(p=>p.active),lostByStructure,errors,ref});}));
- app.post('/api/clinical/rename-code',route(async(req,res)=>{if(req.clinicalActor.role!=='ADMIN')throw fail('Accès district requis.',403);const s=await scope(req),oldCode=String(req.body.old_code||'').trim(),newCode=String(req.body.new_code||'').trim();if(!fields.validCode(newCode))throw fail('Nouveau code invalide.');if(!oldCode||oldCode===newCode)throw fail('Indiquez un nouveau code différent.');const c=await pool.connect();try{await c.query('BEGIN');const reps=(await c.query('SELECT mois,annee,rows_json FROM clinical_reports WHERE code_dhis2=$1 FOR UPDATE',[s.code_dhis2])).rows;if(reps.some(r=>(r.rows_json||[]).some(x=>x.patient_code===newCode)))throw fail('Ce nouveau code existe déjà dans cette structure.',409);let changed=0;for(const r of reps){let hit=false;const rows=(r.rows_json||[]).map(x=>{if(x.patient_code!==oldCode)return x;hit=true;changed++;return{...x,patient_code:newCode,updated_at:new Date().toISOString()};});if(hit)await c.query('UPDATE clinical_reports SET rows_json=$1,status=$2,revision=revision+1,updated_at=now() WHERE code_dhis2=$3 AND mois=$4 AND annee=$5',[JSON.stringify(rows),'BROUILLON',s.code_dhis2,r.mois,r.annee]);}if(!changed)throw fail('Code patient introuvable.',404);await c.query('COMMIT');res.json({ok:true,changed});}catch(e){await c.query('ROLLBACK');throw e;}finally{c.release();}}));
- app.post('/api/clinical/view',route(async(req,res)=>{const s=await scope(req),[m,y]=period(req.body),rs=await reports(pool,s,m,y),report=rs.find(r=>r.mois===m&&r.annee===y),opts=(await pool.query('SELECT payload FROM clinical_options WHERE id=1')).rows[0]?.payload||{};res.json({ok:true,structure:s,rows:report?.rows_json||[],patients:model.snapshot(rs,m,y),revision:report?.revision||0,status:report?.status||'NON SAISI',agenda:model.agenda(rs,m,y),issues:(report?.rows_json||[]).map(row=>({row,reasons:model.issues(row,m,y)})).filter(r=>r.reasons.length),summary:model.summary(rs,m,y,s,report?.status||'NON SAISI'),options:opts});}));
+ function refDateFor(m,y){const monthEnd=new Date(Date.UTC(y,m,0)).toISOString().slice(0,10),today=new Date().toISOString().slice(0,10);return today<monthEnd?today:monthEnd;}
+ // Vue combinée district : fusionne tous les patients de toutes les structures rattachées, par code (hors AES/MOBILE).
+ // Lecture seule — un patient se modifie toujours depuis sa propre structure.
+ async function districtPatients(structures,m,y){
+  const byCode=new Map();
+  for(const s of structures){
+   const rs=await reports(pool,s,m,y);
+   for(const rep of rs){
+    if(Number(rep.annee)*100+Number(rep.mois)>y*100+m)continue;
+    for(const r of rep.rows_json||[]){
+     if(fields.isSpecialCode(r.patient_code))continue;
+     const code=String(r.patient_code),key=Number(rep.annee)*100+Number(rep.mois);
+     let entry=byCode.get(code);if(!entry){entry={bestKey:-1,row:null,history:[]};byCode.set(code,entry);}
+     entry.history.push({code_dhis2:s.code_dhis2,nom_entite:s.nom_entite,mois:Number(rep.mois),annee:Number(rep.annee)});
+     if(key>entry.bestKey){entry.bestKey=key;entry.row={...r,_structure:{code_dhis2:s.code_dhis2,nom_entite:s.nom_entite}};}
+    }
+   }
+  }
+  const result=[];
+  for(const entry of byCode.values()){
+   entry.history.sort((a,b)=>a.annee*100+a.mois-(b.annee*100+b.mois));
+   const changes=[];for(const h of entry.history)if(!changes.length||changes[changes.length-1].code_dhis2!==h.code_dhis2)changes.push(h);
+   result.push({...entry.row,_location_history:changes});
+  }
+  return result.sort((a,b)=>String(a.patient_code).localeCompare(String(b.patient_code),'fr'));
+ }
+ app.post('/api/clinical/view',route(async(req,res)=>{
+  const [m,y]=period(req.body),a=req.clinicalActor,ref=refDateFor(m,y);
+  if(String(req.body.code_dhis2||'')==='DISTRICT'){
+   if(a.role!=='ADMIN')throw fail('Accès réservé au district.',403);
+   const structures=(await listStructures(a)).filter(x=>x.code_dhis2);
+   const patients=await districtPatients(structures,m,y);
+   res.json({ok:true,district:true,structure:{nom_entite:'District Sanitaire de Toumodi (toutes structures)',code_dhis2:'DISTRICT'},
+    patients,rows:[],revision:null,status:'Vue combinée (lecture seule)',agenda:[],issues:[],summary:null,
+    perdus_de_vue:patients.filter(r=>fields.overdue(r,ref)&&!model.truth(r.deces)).map(r=>({...r,jours_retard:model.due(r)?Math.max(0,Math.round((Date.parse(ref)-Date.parse(model.due(r)))/864e5)):null})),
+    codes_erreur:patients.filter(r=>r.code_ok==='0'),options:{}});
+   return;
+  }
+  const s=await scope(req),rs=await reports(pool,s,m,y),report=rs.find(r=>r.mois===m&&r.annee===y),opts=(await pool.query('SELECT payload FROM clinical_options WHERE id=1')).rows[0]?.payload||{};
+  const patients=model.snapshot(rs,m,y),monthlyRows=report?.rows_json||[];
+  res.json({ok:true,district:false,structure:s,rows:monthlyRows,patients,revision:report?.revision||0,status:report?.status||'NON SAISI',agenda:model.agenda(rs,m,y),
+   issues:monthlyRows.map(row=>({row,reasons:model.issues(row,m,y)})).filter(r=>r.reasons.length),summary:model.summary(rs,m,y,s,report?.status||'NON SAISI'),options:opts,
+   perdus_de_vue:patients.filter(r=>fields.overdue(r,ref)&&!model.truth(r.deces)).map(r=>({...r,jours_retard:model.due(r)?Math.max(0,Math.round((Date.parse(ref)-Date.parse(model.due(r)))/864e5)):null})),
+   codes_erreur:patients.filter(r=>r.code_ok==='0'),
+   specials:monthlyRows.filter(r=>fields.isSpecialCode(r.patient_code))});
+ }));
  app.post('/api/clinical/lookup',route(async(req,res)=>{const s=await scope(req),[m,y]=period(req.body),rs=await reports(pool,s,m,y),row=model.snapshot(rs,m,y).find(r=>r.patient_code===String(req.body.patient_code||'').trim());if(!row)throw fail('Patient introuvable dans votre structure.',404);res.json({ok:true,row,revision:rs.find(r=>r.mois===m&&r.annee===y)?.revision||0});}));
  async function mutate(req,fn){const s=await scope(req),[m,y]=period(req.body),c=await pool.connect();try{await c.query('BEGIN');await c.query('SELECT pg_advisory_xact_lock(hashtext($1))',[s.code_dhis2]);await c.query('SELECT pg_advisory_xact_lock(hashtext($1),$2)',[s.code_dhis2,y*100+m]);let rs=await reports(c,s,m,y);let target=rs.find(r=>r.mois===m&&r.annee===y);if(Number(req.body.revision)!==Number(target?.revision||0))throw fail('Les données ont changé. Rechargez la page.',409);if(!target){target={code_dhis2:s.code_dhis2,mois:m,annee:y,rows_json:[],revision:0,status:'BROUILLON'};rs.push(target);}await fn(target,rs,s,m,y);const sum=model.summary(rs,m,y,s,target.status);const saved=await c.query('INSERT INTO clinical_reports(code_dhis2,mois,annee,rows_json,summary_json,status,revision) VALUES($1,$2,$3,$4,$5,$6,1) ON CONFLICT(code_dhis2,mois,annee) DO UPDATE SET rows_json=EXCLUDED.rows_json,summary_json=EXCLUDED.summary_json,status=EXCLUDED.status,revision=clinical_reports.revision+1,updated_at=now() RETURNING revision',[s.code_dhis2,m,y,JSON.stringify(target.rows_json),JSON.stringify(sum),target.status]);await c.query('COMMIT');return saved.rows[0];}catch(e){await c.query('ROLLBACK');throw e;}finally{c.release();}}
  app.post('/api/clinical/visit',route(async(req,res)=>{const out=await mutate(req,async(t,rs,s,m,y)=>{const code=String(req.body.patient_code||'').trim(),old=model.snapshot(rs,m,y).find(r=>r.patient_code===code);if(!old)throw fail('Patient introuvable.',404);const date=String(req.body.derniere_dispensation||''),days=Number(req.body.jours_dispenses);if(!date.startsWith(`${y}-${String(m).padStart(2,'0')}-`)||!model.due({derniere_dispensation:date,jours_dispenses:days}))throw fail('Date ou durée invalide pour le mois choisi.');if(['deces','transfert_out','arret_tarv','perdu_vue'].some(k=>model.truth(old[k])))throw fail('Corrigez le statut de sortie avant la prise.');const i=t.rows_json.findIndex(r=>r.patient_code===code),row={...old,derniere_dispensation:date,jours_dispenses:days,updated_at:new Date().toISOString(),mois:m,annee:y};if(i<0){for(const k of ['nouvelle_inclusion','transfert_in','retour_soins'])row[k]=false;t.rows_json.push(row);}else t.rows_json[i]=row;t.status='BROUILLON';});res.json({ok:true,...out});}));
@@ -78,20 +120,49 @@ module.exports=function installClinical(app,pool,databaseUrl,legacyTables){
   const opts=(await pool.query('SELECT payload FROM clinical_options WHERE id=1')).rows[0]?.payload||{};
   const out=await mutate(req,async(t,rs,s,m,y)=>{
    let row;try{row=fields.normalize(req.body.row,null,opts,m,y,true);}catch(e){throw fail(e.message);}
-   const exists=await pool.query("SELECT 1 FROM clinical_reports WHERE code_dhis2=$1 AND EXISTS (SELECT 1 FROM jsonb_array_elements(rows_json) p WHERE p->>'patient_code'=$2) LIMIT 1",[s.code_dhis2,row.patient_code]);
-   if(exists.rows.length)throw fail('Ce code patient existe déjà dans cette structure. Utilisez Modifier.',409);
+   if(!fields.isSpecialCode(row.patient_code)){
+    const exists=await pool.query("SELECT 1 FROM clinical_reports WHERE code_dhis2=$1 AND EXISTS (SELECT 1 FROM jsonb_array_elements(rows_json) p WHERE p->>'patient_code'=$2) LIMIT 1",[s.code_dhis2,row.patient_code]);
+    if(exists.rows.length)throw fail('Ce code patient existe déjà dans cette structure. Utilisez Modifier.',409);
+   }
    const issues=model.issues(row,m,y);if(issues.length)throw fail(issues.join(' ; '));
    t.rows_json.push({...row,code_dhis2:s.code_dhis2,mois:m,annee:y,updated_at:new Date().toISOString()});t.status='BROUILLON';
   });res.json({ok:true,...out});
  }));
- app.post('/api/clinical/validate',route(async(req,res)=>{const out=await mutate(req,async(t,_rs,_s,m,y)=>{if(!t.rows_json.length)throw fail('Aucun patient enregistré.');if(t.rows_json.some(r=>model.issues(r,m,y).length))throw fail('Corrigez les fiches signalées avant validation.');t.status='VALIDE';});res.json({ok:true,...out});}));
+ // Correction du code patient (district uniquement) : renomme le code sur TOUTES les fiches mensuelles
+// existantes de la structure (historique compris), pas seulement le mois en cours.
+app.post('/api/clinical/recode',route(async(req,res)=>{
+ if(req.clinicalActor.role!=='ADMIN')throw fail('Accès réservé au district.',403);
+ const s=await scope(req),oldCode=String(req.body.old_code||'').trim(),newCodeRaw=String(req.body.new_code||'').trim();
+ if(!oldCode||!newCodeRaw)throw fail('Code manquant.');
+ const newCode=fields.isSpecialCode(newCodeRaw)?newCodeRaw.toUpperCase():newCodeRaw;
+ if(newCode===oldCode)throw fail('Le nouveau code est identique à l’ancien.');
+ if(fields.isSpecialCode(oldCode)||fields.isSpecialCode(newCode))throw fail('Les codes AES et MOBILE ne peuvent pas être renommés ni utilisés comme nouveau code.');
+ const c=await pool.connect();
+ try{
+  await c.query('BEGIN');await c.query('SELECT pg_advisory_xact_lock(hashtext($1))',[s.code_dhis2]);
+  const all=(await c.query('SELECT mois,annee,rows_json,revision FROM clinical_reports WHERE code_dhis2=$1',[s.code_dhis2])).rows;
+  const hasOld=all.some(r=>(r.rows_json||[]).some(x=>x.patient_code===oldCode));
+  if(!hasOld)throw fail('Ce code est introuvable dans l’historique de cette structure.',404);
+  const clash=all.some(r=>(r.rows_json||[]).some(x=>x.patient_code===newCode));
+  if(clash)throw fail('Le nouveau code est déjà utilisé par un autre patient de cette structure.',409);
+  let touched=0;
+  for(const r of all){
+   const rows=r.rows_json||[];if(!rows.some(x=>x.patient_code===oldCode))continue;
+   const updated=rows.map(x=>x.patient_code===oldCode?{...x,patient_code:newCode,code_ok:fields.codeFormatOk(newCode)?'1':'0',updated_at:new Date().toISOString()}:x);
+   await c.query('UPDATE clinical_reports SET rows_json=$1,revision=revision+1,updated_at=now() WHERE code_dhis2=$2 AND mois=$3 AND annee=$4',[JSON.stringify(updated),s.code_dhis2,r.mois,r.annee]);
+   touched++;
+  }
+  await c.query('COMMIT');res.json({ok:true,months_updated:touched});
+ }catch(e){await c.query('ROLLBACK');throw e;}finally{c.release();}
+}));
+app.post('/api/clinical/validate',route(async(req,res)=>{const out=await mutate(req,async(t,_rs,_s,m,y)=>{if(!t.rows_json.length)throw fail('Aucun patient enregistré.');if(t.rows_json.some(r=>model.issues(r,m,y).length))throw fail('Corrigez les fiches signalées avant validation.');t.status='VALIDE';});res.json({ok:true,...out});}));
 function evaluateImport(rawRows,known,monthlyRows,opts,m,y){
   const byCode=new Map(known.map(r=>[String(r.patient_code),r])),monthlySet=new Set(monthlyRows.map(r=>r.patient_code));
   const seen=new Set(),ready=[],errors=[];
   for(const {excelRow,raw} of rawRows){
    const {code,input}=importer.coerceRow(raw,opts);
    if(!code){errors.push({excelRow,code:'',reason:'Code patient manquant.'});continue;}
-   if(seen.has(code)){errors.push({excelRow,code,reason:'Code patient en double dans le fichier : ligne ignorée.'});continue;}
+   if(seen.has(code)&&!fields.isSpecialCode(code)){errors.push({excelRow,code,reason:'Code patient en double dans le fichier : ligne ignorée.'});continue;}
    seen.add(code);
    const old=byCode.get(code)||null,isNew=!old;
    const baseline=old?{...old}:null;if(baseline&&!monthlySet.has(code))for(const k of ['nouvelle_inclusion','transfert_in','retour_soins'])baseline[k]='0';
@@ -121,8 +192,8 @@ function evaluateImport(rawRows,known,monthlyRows,opts,m,y){
    const known=model.snapshot(rs,m,y),monthly=t.rows_json;
    const {ready,errors}=evaluateImport(parsed.rows,known,monthly,opts,m,y);
    if(!ready.length)throw fail('Aucune fiche valide dans le fichier. Corrigez les erreurs puis réessayez.');
-   for(const {code,row} of ready){const finalRow={...row,code_dhis2:s.code_dhis2,mois:m,annee:y,updated_at:new Date().toISOString()};const i=t.rows_json.findIndex(r=>r.patient_code===code);if(i<0)t.rows_json.push(finalRow);else t.rows_json[i]=finalRow;}
-   t.status='BROUILLON';for(const e of errors)await pool.query('INSERT INTO clinical_code_errors(code_dhis2,mois,annee,patient_code,reason) VALUES($1,$2,$3,$4,$5)',[s.code_dhis2,m,y,e.code||'',e.reason]);report={imported:ready.length,errors};
+   for(const {code,row} of ready){const finalRow={...row,code_dhis2:s.code_dhis2,mois:m,annee:y,updated_at:new Date().toISOString()};const i=fields.isSpecialCode(code)?-1:t.rows_json.findIndex(r=>r.patient_code===code);if(i<0)t.rows_json.push(finalRow);else t.rows_json[i]=finalRow;}
+   t.status='BROUILLON';report={imported:ready.length,errors};
   });
   res.json({ok:true,commit:true,...out,imported:report.imported,skipped:report.errors.length,errors:report.errors.slice(0,500)});
  }));
