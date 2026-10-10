@@ -84,9 +84,13 @@ module.exports=function installClinical(app,pool,databaseUrl,legacyTables){
   const [m,y]=period(req.body),a=req.clinicalActor,ref=refDateFor(m,y);
   if(String(req.body.code_dhis2||'')==='DISTRICT'){
    if(a.role!=='ADMIN')throw fail('Accès réservé au district.',403);
-   const structures=(await listStructures(a)).filter(x=>x.code_dhis2);
+   let structures=(await listStructures(a)).filter(x=>x.code_dhis2);
+   // Compilation personnalisée : seulement les structures cochées, si une sélection est fournie.
+   const picked=Array.isArray(req.body.structures)?new Set(req.body.structures.map(String)):null;
+   if(picked)structures=structures.filter(x=>picked.has(String(x.code_dhis2)));
+   if(!structures.length)throw fail('Choisissez au moins une structure à compiler.');
    const patients=await districtPatients(structures,m,y);
-   res.json({ok:true,district:true,structure:{nom_entite:'District Sanitaire de Toumodi (toutes structures)',code_dhis2:'DISTRICT'},
+   res.json({ok:true,district:true,structure:{nom_entite:picked?`District Sanitaire de Toumodi (${structures.length} structure(s) choisie(s))`:'District Sanitaire de Toumodi (toutes structures)',code_dhis2:'DISTRICT'},
     patients,rows:[],revision:null,status:'Vue combinée (lecture seule)',agenda:[],issues:[],summary:null,
     perdus_de_vue:patients.filter(r=>fields.overdue(r,ref)&&!model.truth(r.deces)).map(r=>({...r,jours_retard:model.due(r)?Math.max(0,Math.round((Date.parse(ref)-Date.parse(model.due(r)))/864e5)):null})),
     codes_erreur:patients.filter(r=>r.code_ok==='0'),options:{}});

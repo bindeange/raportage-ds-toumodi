@@ -20,7 +20,7 @@
     const sum = (arr) => arr.reduce((a, b) => a + b, 0);
     const validated = (s) => ['VALIDE', 'VALIDÉ', 'VALIDEE', 'VALIDÉE', 'NEANT', 'NÉANT'].includes(String(s).toUpperCase());
     const badge = (s) => `<span class="pill ${validated(s) ? 'pill-ok' : s ? 'pill-wait' : 'pill-empty'}">${validated(s) ? 'Validé' : s ? 'En cours' : 'Non saisi'}</span>`;
-    const clinicalPill = (status) => `<span class="pill ${status === 'VALIDE' ? 'pill-ok' : status === 'BROUILLON' ? 'pill-wait' : 'pill-empty'}">${status === 'VALIDE' ? 'Validée' : status === 'BROUILLON' ? 'Brouillon' : 'Non saisie'}</span>`;
+    const clinicalPill = (status) => `<span class="pill ${status === 'VALIDE' ? 'pill-ok' : status === 'BROUILLON' ? 'pill-wait' : 'pill-empty'}">${status === 'VALIDE' ? '✓ Validée' : status === 'BROUILLON' ? 'Brouillon' : 'Non saisie'}</span>`;
 
     let actor = null;
     let activePeriod = { m: null, y: null };

@@ -96,10 +96,19 @@ function resolveDate(raw) {
  * elle n'est jamais convertie en « valeur vide ». Les erreurs fines (format, option inconnue) restent
  * la responsabilité de normalize(), seule source de vérité, utilisée aussi par la saisie manuelle.
  */
+// Type par champ, toutes grilles confondues (grille standard + Registre de dispensation), pour que coerceRow
+// sache convertir n'importe quel champ produit par n'importe quel format de fichier pris en charge.
+function typesByField() {
+    const map = {};
+    for (const c of [...FIELD_COLUMNS, ...REGISTRY_COLUMNS]) if (c.field && c.field !== 'patient_code' && !map[c.field]) map[c.field] = c.type;
+    return map;
+}
 function coerceRow(raw, options) {
-    const code = trimmed(raw.patient_code), input = {};
-    for (const c of FIELD_COLUMNS) {
-        if (c.field === 'patient_code' || !(c.field in raw)) continue;
+    const code = trimmed(raw.patient_code), input = {}, types = typesByField();
+    for (const field of Object.keys(raw)) {
+        if (field === 'patient_code') continue;
+        const c = { field, type: types[field] };
+        if (!c.type || !(c.field in raw)) continue;
         const cell = raw[c.field];
         if (cell == null || cell === '') continue;
         switch (c.type) {
@@ -116,32 +125,137 @@ function coerceRow(raw, options) {
 }
 
 /** Lit un classeur .xlsx (Buffer) et renvoie les lignes de données, par numéro de ligne Excel. */
-async function parseWorkbook(buffer) {
-    const wb = new ExcelJS.Workbook();
-    try { await wb.xlsx.load(buffer); } catch { throw new Error('Fichier illisible. Vérifiez qu’il s’agit bien d’un fichier Excel (.xlsx) non corrompu.'); }
-    const ws = wb.worksheets[0];
-    if (!ws) throw new Error('Le fichier ne contient aucune feuille de calcul.');
+// Texte d'une cellule d'en-tête, à l'abri des cellules « esclaves » d'une fusion (merge) dont la lecture de
+// `.text` lève une exception quand leur valeur sous-jacente est nulle.
+function headerText(cell) {
+    try { if (cell.text != null) return cell.text; } catch { /* cellule fusionnée sans valeur propre */ }
+    const v = cell.value;
+    return v && typeof v === 'object' ? (Array.isArray(v.richText) ? v.richText.map((t) => t.text).join('') : '') : v;
+}
+// Lit n'importe quelle ligne de cellule Excel (date, formule déjà calculée, texte enrichi…) en valeur brute.
+function cellValue(row, colNumber) {
+    let v = row.getCell(colNumber).value;
+    if (v && typeof v === 'object' && !(v instanceof Date)) {
+        if ('result' in v) v = v.result;
+        else if ('text' in v) v = v.text;
+        else if (Array.isArray(v.richText)) v = v.richText.map((t) => t.text).join('');
+        else v = null; // formule sans résultat mis en cache (ligne vide du modèle, au-delà des données réelles)
+    }
+    return v;
+}
+// Repère, parmi les premières lignes d'une feuille, celle qui contient les en-têtes recherchés (recherche exacte
+// sur le texte normalisé), pour s'adapter à une grille dont les en-têtes ne sont pas forcément en ligne 1.
+function findHeaderRow(ws, requiredLabels, maxScan = 10) {
+    const wanted = requiredLabels.map(normalizeHeader);
+    for (let r = 1; r <= Math.min(maxScan, ws.rowCount); r++) {
+        const found = new Set();
+        ws.getRow(r).eachCell({ includeEmpty: false }, (cell) => { const norm = normalizeHeader(headerText(cell)); if (wanted.includes(norm)) found.add(norm); });
+        if (wanted.every((w) => found.has(w))) return r;
+    }
+    return null;
+}
+
+/** Grille simple (notre modèle) : une feuille, en-têtes en ligne 1, correspondance par libellé de colonne. */
+function parseSimpleGrid(ws) {
     const colMap = new Map();
     ws.getRow(1).eachCell({ includeEmpty: false }, (cell, colNumber) => {
-        const norm = normalizeHeader(cell.text ?? cell.value);
+        const norm = normalizeHeader(headerText(cell));
         const def = COLUMNS.find((c) => normalizeHeader(c.label) === norm);
         if (def && def.field) colMap.set(colNumber, def);
     });
-    if (![...colMap.values()].some((d) => d.field === 'patient_code')) throw new Error('Colonne « CODE IDENTIFIANT » introuvable. Utilisez le modèle fourni, sans modifier les en-têtes.');
+    if (![...colMap.values()].some((d) => d.field === 'patient_code')) throw new Error('Colonne « CODE IDENTIFIANT » introuvable. Utilisez l’un des modèles pris en charge, sans modifier les en-têtes.');
     const found = new Set([...colMap.values()].map((d) => d.field)), missingColumns = FIELD_COLUMNS.filter((c) => !found.has(c.field)).map((c) => c.label);
     const rows = [];
     ws.eachRow({ includeEmpty: false }, (row, rowNumber) => {
         if (rowNumber === 1) return;
         const raw = {}; let hasAny = false;
-        colMap.forEach((def, colNumber) => {
-            let v = row.getCell(colNumber).value;
-            if (v && typeof v === 'object' && !(v instanceof Date)) v = 'result' in v ? v.result : 'text' in v ? v.text : 'richText' in v ? v.richText.map((t) => t.text).join('') : v;
-            if (v != null && v !== '') hasAny = true;
-            raw[def.field] = v;
-        });
+        colMap.forEach((def, colNumber) => { const v = cellValue(row, colNumber); if (v != null && v !== '') hasAny = true; raw[def.field] = v; });
         if (hasAny) rows.push({ excelRow: rowNumber, raw });
     });
-    return { rows, missingColumns };
+    return { rows, missingColumns, format: 'grille standard' };
+}
+
+// Grille « Registre de dispensation » (OND-FACT, 3 feuillets) : en-têtes non alignées en ligne 1, une ligne par
+// dispensation (un même patient peut apparaître plusieurs fois dans le mois : on cumule alors les jours
+// dispensés et on retient la date la plus récente, comme l'indique la feuille « Instruction-Orientation »),
+// et les sorties (décès, transferts, arrêts) listées séparément dans la feuille « ATTRITION ».
+const REGISTRY_COLUMNS = [
+    { label: 'CODE IDENTIFIANT', field: 'patient_code', type: 'text' },
+    { label: 'Date de dispensation (JJ/MM/AA)', field: 'derniere_dispensation', type: 'date' },
+    { label: 'SEXE', field: 'sexe', type: 'sexe' },
+    { label: 'AGE', field: 'age', type: 'number' },
+    { label: 'POIDS', field: 'poids', type: 'number' },
+    { label: 'Nouveau', field: 'nouvelle_inclusion', type: 'bool' },
+    { label: 'AES \n(Ou cas particulier)', field: 'cas_aes', type: 'bool' },
+    { label: 'Nombre de jours dispensés', field: 'jours_dispenses', type: 'integer' },
+    { label: 'REGIME', field: 'regime', type: 'choice' },
+    { label: 'Patient Stable', field: 'stable', type: 'choice' },
+    { label: 'TB/VIH', field: 'tb_vih', type: 'bool' },
+    { label: 'Type de VIH', field: 'type_vih', type: 'choice' },
+    { label: 'Ligne thérapeutique', field: 'ligne_therapeutique', type: 'ligne' },
+    { label: 'Transféré In', field: 'transfert_in', type: 'bool' },
+    { label: 'Servi ailleurs', field: 'servi_ailleurs', type: 'bool' },
+    { label: 'Patient mobile', field: 'patient_mobile', type: 'bool' }
+];
+function parseRegistry(wb) {
+    const ws = wb.worksheets.find((s) => normalizeHeader(s.name) === normalizeHeader('Registre de dispensation'));
+    const headerRow = findHeaderRow(ws, ['CODE IDENTIFIANT']);
+    if (!headerRow) throw new Error('Colonne « CODE IDENTIFIANT » introuvable dans la feuille « Registre de dispensation ».');
+    const colMap = new Map();
+    ws.getRow(headerRow).eachCell({ includeEmpty: false }, (cell, colNumber) => {
+        const norm = normalizeHeader(headerText(cell));
+        // Correspondance exacte : « Code identifiant patient (si déjà concaténé…) » ne doit pas être pris pour « CODE IDENTIFIANT ».
+        const def = REGISTRY_COLUMNS.find((c) => normalizeHeader(c.label) === norm);
+        if (def && !colMap.has(def.field)) colMap.set(def.field, colNumber);
+    });
+    const byCode = new Map(), order = [];
+    for (let r = headerRow + 1; r <= ws.rowCount; r++) {
+        const row = ws.getRow(r), codeCol = colMap.get('patient_code');
+        const code = codeCol ? String(cellValue(row, codeCol) ?? '').trim() : '';
+        if (!code) continue;
+        const raw = {};
+        for (const [field, colNumber] of colMap) raw[field] = cellValue(row, colNumber);
+        if (byCode.has(code)) {
+            // Même code saisi plusieurs fois ce mois-ci : on cumule les jours dispensés et on garde la dispensation la plus récente.
+            const prev = byCode.get(code).raw, prevDate = String(prev.derniere_dispensation instanceof Date ? prev.derniere_dispensation.toISOString() : prev.derniere_dispensation || '');
+            const newDate = String(raw.derniere_dispensation instanceof Date ? raw.derniere_dispensation.toISOString() : raw.derniere_dispensation || '');
+            const sum = (Number(prev.jours_dispenses) || 0) + (Number(raw.jours_dispenses) || 0);
+            const merged = newDate >= prevDate ? { ...raw } : { ...prev };
+            merged.jours_dispenses = sum || merged.jours_dispenses;
+            byCode.get(code).raw = merged;
+        } else { const entry = { excelRow: r, raw }; byCode.set(code, entry); order.push(entry); }
+    }
+    const attrition = wb.worksheets.find((s) => normalizeHeader(s.name) === normalizeHeader('ATTRITION'));
+    if (attrition) {
+        const aHeader = findHeaderRow(attrition, ['CODE_IDENTIFIANT']) || findHeaderRow(attrition, ['CODE IDENTIFIANT']);
+        if (aHeader) {
+            const aCols = {};
+            attrition.getRow(aHeader).eachCell({ includeEmpty: false }, (cell, colNumber) => {
+                const norm = normalizeHeader(headerText(cell));
+                if (norm === 'code_identifiant' || norm === 'code identifiant') aCols.code = colNumber;
+                else if (norm.startsWith('statut')) aCols.statut = colNumber;
+            });
+            for (let r = aHeader + 1; r <= attrition.rowCount; r++) {
+                const row = attrition.getRow(r), code = aCols.code ? String(cellValue(row, aCols.code) ?? '').trim() : '';
+                if (!code) continue;
+                const statut = normalizeHeader(aCols.statut ? cellValue(row, aCols.statut) : '');
+                const field = /dece/.test(statut) ? 'deces' : /transfer/.test(statut) ? 'transfert_out' : /arret/.test(statut) ? 'arret_tarv' : null;
+                if (!field) continue;
+                if (byCode.has(code)) byCode.get(code).raw[field] = 1;
+                else { const entry = { excelRow: r, raw: { patient_code: code, [field]: 1 } }; byCode.set(code, entry); order.push(entry); }
+            }
+        }
+    }
+    return { rows: order, missingColumns: [], format: 'Registre de dispensation (OND-FACT)' };
+}
+
+async function parseWorkbook(buffer) {
+    const wb = new ExcelJS.Workbook();
+    try { await wb.xlsx.load(buffer); } catch { throw new Error('Fichier illisible. Vérifiez qu’il s’agit bien d’un fichier Excel (.xlsx) non corrompu.'); }
+    if (wb.worksheets.some((s) => normalizeHeader(s.name) === normalizeHeader('Registre de dispensation'))) return parseRegistry(wb);
+    const ws = wb.worksheets[0];
+    if (!ws) throw new Error('Le fichier ne contient aucune feuille de calcul.');
+    return parseSimpleGrid(ws);
 }
 
 const EXAMPLE = { patient_code: '12345/67/89/01234', sexe: 'F', age: 34, poids: 58, nouvelle_inclusion: 0, transfert_in: 0, retour_soins: 0, tb_vih: 'Non', type_vih: 'VIH1', ligne_therapeutique: '1', jours_dispenses: 90, regime: 'TDF/3TC/DTG', stable: 'Oui', transfert_out: 0, deces: 0, arret_tarv: 0, servi_ailleurs: 0 };

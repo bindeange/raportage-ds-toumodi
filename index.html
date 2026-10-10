@@ -85,8 +85,11 @@
             body.print-district-bilan #district-passwords-view,
             body.print-district-bilan .district-menu,
             body.print-district-bilan .district-filters { display:none !important; }
-            body.print-district-bilan .dashboard-wrap { overflow:visible; border:none; margin-bottom:14px; }
-            body.print-district-bilan .dashboard-table { min-width:0; width:100%; margin-top:4px; }
+            body.print-district-bilan .dashboard-wrap { overflow:visible; border:none; margin-bottom:14px; max-height:none; }
+            /* Tableau imprimé à sa taille réelle, sans en-tête ni 1re colonne « collante » (source du chevauchement à l'impression) : */
+            body.print-district-bilan .dashboard-table { min-width:0; width:100%; margin-top:4px; table-layout:fixed; font-size:8px; border-collapse:collapse; }
+            body.print-district-bilan .dashboard-table th, body.print-district-bilan .dashboard-table td { position:static !important; white-space:normal; word-break:break-word; padding:2px 3px; border:1px solid #ccc; min-width:0; }
+            body.print-district-bilan .dashboard-table th:first-child, body.print-district-bilan .dashboard-table td:first-child { min-width:0; width:auto; }
             body.print-district-bilan h4 { margin:8px 0 4px; }
             table { page-break-inside:auto; }
             tr { page-break-inside:avoid; page-break-after:auto; }

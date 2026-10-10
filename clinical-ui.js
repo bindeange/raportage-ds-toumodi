@@ -7,7 +7,21 @@
  const refDateFor=(m,y)=>{const monthEnd=new Date(Date.UTC(y,m,0)).toISOString().slice(0,10),today=new Date().toISOString().slice(0,10);return today<monthEnd?today:monthEnd;};
  const fileToBase64=file=>new Promise((resolve,reject)=>{const r=new FileReader();r.onload=()=>resolve(String(r.result).split(',')[1]);r.onerror=()=>reject(Error('Lecture du fichier impossible.'));r.readAsDataURL(file);});
  async function downloadFile(path,filename){const r=await fetch('/api/clinical/'+path,{headers:{Authorization:'Bearer '+window.clinicalToken}});if(r.status===401&&window.sessionExpired){window.sessionExpired();return;}if(!r.ok){const j=await r.json().catch(()=>({}));throw Error(j.error||'Téléchargement impossible.');}const blob=await r.blob(),url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download=filename;document.body.appendChild(a);a.click();a.remove();URL.revokeObjectURL(url);}
- const context=()=>({code_dhis2:$('clinical-structure').value,mois:+$('clinical-month').value,annee:+$('clinical-year').value});
+ let districtChoices=[];
+ const context=()=>{
+  const c={code_dhis2:$('clinical-structure').value,mois:+$('clinical-month').value,annee:+$('clinical-year').value};
+  const picker=$('clinical-district-picker');
+  if(c.code_dhis2==='DISTRICT'&&picker)c.structures=[...picker.querySelectorAll('input[type=checkbox]:checked')].map(x=>x.value);
+  return c;
+ };
+ function renderDistrictPicker(){
+  const box=$('clinical-district-box');if(!box)return;
+  if($('clinical-structure').value!=='DISTRICT'){box.innerHTML='';return;}
+  box.innerHTML=`<fieldset id="clinical-district-picker"><legend>Structures à compiler</legend>${districtChoices.map(x=>`<label><input type="checkbox" value="${esc(x.code_dhis2)}" checked>${esc(x.nom_entite)}</label>`).join('')}</fieldset><div class="form-actions"><button type="button" id="clinical-district-all">Tout cocher</button><button type="button" id="clinical-district-none">Tout décocher</button><button type="button" id="clinical-district-apply" class="primary-action">Compiler la sélection</button></div>`;
+  $('clinical-district-all').onclick=()=>{box.querySelectorAll('input').forEach(x=>x.checked=true);};
+  $('clinical-district-none').onclick=()=>{box.querySelectorAll('input').forEach(x=>x.checked=false);};
+  $('clinical-district-apply').onclick=refresh;
+ }
  function bindEdits(host){host.querySelectorAll('[data-edit]').forEach(b=>b.onclick=()=>edit(b.dataset.edit));host.querySelectorAll('[data-recode]').forEach(b=>b.onclick=()=>recode(b.dataset.recode,b.dataset.structure||state.context.code_dhis2));}
  const table=(headers,body)=>`<div class="table-scroll"><table><thead><tr>${headers.map(h=>`<th>${h}</th>`).join('')}</tr></thead><tbody>${body}</tbody></table></div>`;
  const editButton=code=>F.isSpecialCode(code)?'':`<button type="button" data-edit="${esc(code)}">Modifier / prise</button>`;
@@ -136,8 +150,9 @@
   actorRef=actor;
   const host=$('clinical-home');for(const id of ['dashboard-zone','agent-home','district-zone','saisie-zone'])$(id).classList.add('no-disp');host.classList.remove('no-disp');if(window.setNav)window.setNav('clinical');
   const choices=(window.clinicalStructures||[]).filter(x=>actor.role==='ADMIN'?x.role==='USER'&&x.code_dhis2:x.id===actor.id);
+  districtChoices=choices;
   const districtOption=actor.role==='ADMIN'?`<option value="DISTRICT">— District Sanitaire de Toumodi (toutes structures) —</option>`:'';
-  host.innerHTML=`<section class="clinical-card"><h2>File active</h2><p>Suivi des rendez-vous, fiches patients et nouvelles inclusions.</p><div class="portal-filters"><label>Structure<select id="clinical-structure" ${actor.role==='ADMIN'?'':'disabled'}>${districtOption}${choices.map(x=>`<option value="${esc(x.code_dhis2||'')}">${esc(x.nom_entite)}</option>`).join('')}</select></label><label>Mois<input id="clinical-month" type="number" min="1" max="12" value="${esc(m)}"></label><label>Année<input id="clinical-year" type="number" min="2020" max="2100" value="${esc(y)}"></label><button id="clinical-load">Actualiser</button></div><div id="clinical-result"></div></section>`;
-  $('clinical-load').onclick=refresh;for(const id of ['clinical-structure','clinical-month','clinical-year'])$(id).onchange=refresh;await refresh();
+  host.innerHTML=`<section class="clinical-card"><h2>File active</h2><p>Suivi des rendez-vous, fiches patients et nouvelles inclusions.</p><div class="portal-filters"><label>Structure<select id="clinical-structure" ${actor.role==='ADMIN'?'':'disabled'}>${districtOption}${choices.map(x=>`<option value="${esc(x.code_dhis2||'')}">${esc(x.nom_entite)}</option>`).join('')}</select></label><label>Mois<input id="clinical-month" type="number" min="1" max="12" value="${esc(m)}"></label><label>Année<input id="clinical-year" type="number" min="2020" max="2100" value="${esc(y)}"></label><button id="clinical-load">Actualiser</button></div><div id="clinical-district-box"></div><div id="clinical-result"></div></section>`;
+  $('clinical-load').onclick=refresh;$('clinical-structure').onchange=()=>{renderDistrictPicker();refresh();};for(const id of ['clinical-month','clinical-year'])$(id).onchange=refresh;renderDistrictPicker();await refresh();
  };
 })();
