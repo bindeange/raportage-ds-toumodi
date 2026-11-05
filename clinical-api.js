@@ -37,6 +37,16 @@ module.exports=function installClinical(app,pool,databaseUrl,legacyTables){
  const listStructures=async actor=>actor.role==='ADMIN'?(await pool.query("SELECT id,nom_entite,role,code_structure,code_dhis2 FROM entites WHERE role='USER' AND upper(nom_entite) NOT LIKE '%ICCM%' AND upper(coalesce(code_structure,'')) NOT LIKE '%ICCM%' AND nom_entite NOT ILIKE 'ASC:%' ORDER BY nom_entite")).rows:[actor];
  // Données de session : uniquement après connexion (un ESPC ne reçoit que sa propre structure).
  app.get('/api/clinical/context',route(async(req,res)=>{const a=req.clinicalActor,[structures,params,families]=await Promise.all([listStructures(a),pool.query("SELECT cle,valeur FROM parametres WHERE cle IN ('mois_actif','annee_active','saisie_ouverte')"),pool.query('SELECT * FROM familles ORDER BY nom_famille')]);res.json({ok:true,user:a,structures,params:params.rows,families:families.rows});}));
+ // Stock reports use the same authenticated session and commit all lines together.
+ app.post('/api/clinical/stock-report',route(async(req,res)=>{
+  try { res.json(await require('./report-save').saveReport(pool,req.clinicalActor,req.body)); }
+  catch(e) {
+   if(e.status)throw e;
+   console.error('Stock report save failed:',e.code,e.message);
+   const messages={ '22P02':'Une quantité a un format incompatible avec la base.', '22003':'Une quantité dépasse la limite de la base.', '23503':'Un médicament ou indicateur est introuvable. Rechargez le rapport.', '23505':'Une ligne existe en double. Contactez le district.', '42501':'La base refuse cette opération. Contactez le district.' };
+   throw fail((messages[e.code]||'Enregistrement refusé par la base.')+' Aucun enregistrement complet n’a été confirmé. Gardez vos valeurs et vérifiez le rapport avant de réessayer.'+(e.code?' Référence : '+e.code+'.':''),500);
+  }
+ }));
  // Suivi des validations (ancien tableau de bord public, désormais réservé aux utilisateurs connectés).
  app.get('/api/clinical/tracking',route(async(req,res)=>{
   const [m,y]=period(req.query),a=req.clinicalActor,mine=a.role!=='ADMIN';

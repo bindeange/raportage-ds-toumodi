@@ -2094,6 +2094,8 @@ async function saveData() {
         return;
     }
 
+    const saveButton = document.getElementById('save-btn');
+    if (saveButton.disabled) return;
     const errors = document.querySelectorAll('.row-error');
     if (errors.length > 0) {
         alert(`${errors.length} ligne(s) en erreur (fond rouge).\nVerifiez que : Stock Initial + Recu - Distribue - Pertes = Disponible`);
@@ -2122,23 +2124,9 @@ async function saveData() {
     if (!confirm(question)) return;
 
     loader(true);
+    saveButton.disabled = true;
     try {
-        // 1. Creer ou mettre a jour l'entete du rapport
-        const rapRes = await neonQuery(`
-            INSERT INTO rapports (entite_id, famille_id, mois, annee, statut, date_soumission)
-            VALUES ($1, $2, $3, $4, 'TRANSMIS', NOW())
-            ON CONFLICT (entite_id, famille_id, mois, annee)
-            DO UPDATE SET statut = 'TRANSMIS', date_soumission = NOW()
-            RETURNING id
-        `, [saveTarget.id, currentFamilleId, saveM, saveA]);
-
-        if (!rapRes.length) throw new Error("Impossible de creer le rapport");
-        const rapportId = rapRes[0].id;
-
-        // 2. Supprimer anciens details stocks si re-saisie
-        await neonQuery("DELETE FROM rapport_stock_details WHERE rapport_id = $1", [rapportId]);
-
-        // 3. Inserer les lignes de stock
+        const stocks = [], indicateurs = [];
         for (const m of currentMeds) {
             const row = document.getElementById('row_' + m.id);
             if (row && row.style.display === 'none') continue;
@@ -2151,17 +2139,9 @@ async function saveData() {
             const rawComment = document.getElementById('comment_' + m.id)?.value.trim() || null;
             const comment = pert !== 0 ? rawComment : null;
 
-            await neonQuery(`
-                INSERT INTO rapport_stock_details
-                    (rapport_id, medicament_id, stock_initial, quantite_recue, quantite_distribuee, pertes_ajustements, stock_disponible, commentaire)
-                VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-            `, [rapportId, m.id, st, rec, dist, pert, disp, comment]);
+            stocks.push({ medicament_id: Number(m.id), stock_initial: st, quantite_recue: rec,
+                quantite_distribuee: dist, pertes_ajustements: pert, stock_disponible: disp, commentaire: comment });
         }
-
-        // 4. Supprimer anciens indicateurs si re-saisie
-        await neonQuery("DELETE FROM rapport_indicateurs WHERE rapport_id = $1", [rapportId]);
-
-        // 5. Inserer les indicateurs
         for (const i of currentIndics) {
             const row = document.getElementById('indic_row_' + i.id);
             if (row && row.style.display === 'none') continue;
@@ -2171,10 +2151,18 @@ async function saveData() {
             const vN = isPnsme ? (parseFloat(document.getElementById('ind_n_' + i.id)?.value) || 0) : 0;
             const vA = isPnsme ? (parseFloat(document.getElementById('ind_a_' + i.id)?.value) || 0) : 0;
 
-            await neonQuery(`
-                INSERT INTO rapport_indicateurs (rapport_id, indicateur_id, val_unique, val_nouvelle, val_ancienne)
-                VALUES ($1, $2, $3, $4, $5)
-            `, [rapportId, i.id, vU, vN, vA]);
+            indicateurs.push({ indicateur_id: Number(i.id), val_unique: vU, val_nouvelle: vN, val_ancienne: vA });
+        }
+        const response = await fetch('/api/clinical/stock-report', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + window.clinicalToken },
+            body: JSON.stringify({ entite_id: Number(saveTarget.id), famille_id: Number(currentFamilleId),
+                mois: Number(saveM), annee: Number(saveA), stocks, indicateurs })
+        });
+        const saved = await response.json().catch(() => ({}));
+        if (response.status === 401) { sessionExpired(); throw new Error('Session expirée. Reconnectez-vous.'); }
+        if (!response.ok || !saved.ok || !saved.rapport_id || saved.stocks !== stocks.length || saved.indicateurs !== indicateurs.length) {
+            throw new Error(saved.error || 'Le serveur n’a pas confirmé l’enregistrement complet.');
         }
 
         loader(false);
@@ -2190,6 +2178,9 @@ async function saveData() {
         loader(false);
         console.error(e);
         alert("Erreur lors de l'envoi : " + e.message);
+    } finally {
+        loader(false);
+        saveButton.disabled = false;
     }
 }
 
