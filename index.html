@@ -2138,7 +2138,7 @@ async function saveData() {
     if (saveButton.disabled) return;
     const errors = document.querySelectorAll('.row-error');
     if (errors.length > 0) {
-        alert(`${errors.length} ligne(s) en erreur (fond rouge).\nVerifiez que : Stock Initial + Recu - Distribue - Pertes = Disponible`);
+        alert(`${errors.length} ligne(s) en erreur (fond rouge).\nVerifiez que : Stock Initial + Recu - Distribue + Ajustement = Disponible (perte : ajustement negatif)`);
         return;
     }
 

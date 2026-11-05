@@ -57,7 +57,13 @@ async function saveReportOnce(pool, actor, body) {
     for (const row of stocks) {
         for (const k of ['stock_initial', 'quantite_recue', 'quantite_distribuee', 'pertes_ajustements', 'stock_disponible']) number(row[k], k);
         if (['stock_initial', 'quantite_recue', 'quantite_distribuee', 'stock_disponible'].some(k => row[k] < 0)) throw fail('Les quantités de stock doivent être positives ou nulles.');
-        if (Math.abs(row.stock_initial + row.quantite_recue - row.quantite_distribuee - row.pertes_ajustements - row.stock_disponible) > 0.001) throw fail('Bilan de stock incorrect pour le médicament ' + row.medicament_id + '.');
+        // Same signed adjustment and thousandth rounding as the existing form/PHP.
+        const expected = row.stock_initial + row.quantite_recue - row.quantite_distribuee + row.pertes_ajustements;
+        if (Math.round(expected * 1000) !== Math.round(row.stock_disponible * 1000)) {
+            throw fail('Bilan de stock incorrect pour le médicament ' + row.medicament_id
+                + ' : disponible attendu ' + Number(expected.toFixed(3)) + ', saisi ' + row.stock_disponible
+                + '. Règle : initial + reçu - distribué + ajustement.');
+        }
         if (row.commentaire != null && (typeof row.commentaire !== 'string' || row.commentaire.length > 10000)) throw fail('Justification invalide.');
         if (row.pertes_ajustements !== 0 && !row.commentaire?.trim()) throw fail('Justifiez les pertes ou ajustements.');
     }

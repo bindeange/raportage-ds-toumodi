@@ -44,6 +44,26 @@ test('locked reports, changed period and foreign family lines leave previous rep
 test('district can correct a transmitted report',async()=>{
  const p=database({status:'TRANSMIS'});assert.equal((await saveReport(p,{id:1,role:'ADMIN'},payload())).ok,true);
 });
+test('the server accepts the same signed adjustments and precision as the actual form',async()=>{
+ const page=fs.readFileSync(__dirname+'/index.html','utf8');
+ const calculation=page.slice(page.indexOf('function calc(id)'),page.indexOf('\nfunction printCurrentReport',page.indexOf('function calc(id)')));
+ for(const values of [
+  {stock_initial:10,quantite_recue:5,quantite_distribuee:3,pertes_ajustements:-2,stock_disponible:10},
+  {stock_initial:10,quantite_recue:5,quantite_distribuee:3,pertes_ajustements:2,stock_disponible:14},
+  {stock_initial:0.1,quantite_recue:0.2,quantite_distribuee:0,pertes_ajustements:0,stock_disponible:0.3},
+  {stock_initial:10,quantite_recue:5,quantite_distribuee:3,pertes_ajustements:2,stock_disponible:10}
+ ]) {
+  let rowError;
+  const nodes={st_7:{innerText:values.stock_initial},rec_7:{value:values.quantite_recue},dist_7:{value:values.quantite_distribuee},
+   pert_7:{value:values.pertes_ajustements},disp_7:{value:values.stock_disponible},row_comm_7:{style:{}},row_7:{classList:{toggle:(_name,bad)=>rowError=bad}}};
+  const ctx={document:{getElementById:id=>nodes[id]},updateIndicatorVisibility(){}};
+  vm.createContext(ctx);vm.runInContext(calculation,ctx);ctx.calc(7);
+  const body=payload();Object.assign(body.stocks[0],values,{commentaire:values.pertes_ajustements?'Ajustement justifié':null});
+  const p=database();
+  if(rowError) {await assert.rejects(saveReport(p,actor,body),/Bilan de stock incorrect/);assert.equal(p.log.length,0);}
+  else assert.equal((await saveReport(p,actor,body)).ok,true);
+ }
+});
 test('duplicate and invalid lines cannot clear an old report',async()=>{
  for(const change of [b=>b.stocks.push(b.stocks[0]),b=>b.stocks[0].stock_disponible=999,b=>b.stocks[0].quantite_recue=NaN,b=>b.indicateurs[0].val_unique=-1]){
   const p=database(),b=payload();change(b);await assert.rejects(saveReport(p,actor,b));assert.equal(p.log.length,0);
