@@ -2,7 +2,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const vm = require('node:vm');
 const fs = require('node:fs');
-const {saveReport} = require('./report-save');
+const {saveReport, repairIdSequence} = require('./report-save');
 const actor = {id: 2, role: 'USER'};
 const payload = () => ({entite_id: 2, famille_id: 1, mois: 11, annee: 2026,
  stocks: [{medicament_id: 7, stock_initial: 10, quantite_recue: 5, quantite_distribuee: 3, pertes_ajustements: 0, stock_disponible: 12, commentaire: null}],
@@ -48,6 +48,24 @@ test('duplicate and invalid lines cannot clear an old report',async()=>{
  for(const change of [b=>b.stocks.push(b.stocks[0]),b=>b.stocks[0].stock_disponible=999,b=>b.stocks[0].quantite_recue=NaN,b=>b.indicateurs[0].val_unique=-1]){
   const p=database(),b=payload();change(b);await assert.rejects(saveReport(p,actor,b));assert.equal(p.log.length,0);
  }
+});
+test('sequence repair is limited to the report tables and confirmed ID primary keys',async()=>{
+ const p=database();
+ assert.equal(await repairIdSequence(p,{code:'23505',table:'entites',constraint:'entites_pkey'}),false);
+ assert.equal(p.log.length,0);
+ assert.equal(await repairIdSequence(p,{code:'23505',table:'rapports',constraint:'business_key'}),false);
+ assert.ok(!p.log.some(q=>q.includes('setval')));
+});
+test('a persistent ID conflict is retried only once for each table',async()=>{
+ const p=database(),client=await p.connect();let inserts=0,repairs=0;
+ p.connect=async()=>({...client,query:async(q,args)=>{
+  if(q.startsWith('INSERT INTO rapports')){inserts++;throw Object.assign(Error('ID conflict'),{code:'23505',table:'rapports',constraint:'rapports_pkey'});}
+  if(q.startsWith('SELECT pg_get_serial_sequence'))return {rows:[{sequence_name:'public.rapports_id_seq'}]};
+  if(q.startsWith('SELECT setval'))repairs++;
+  return client.query(q,args);
+ }});
+ await assert.rejects(saveReport(p,actor,payload()),/ID conflict/);
+ assert.equal(inserts,2);assert.equal(repairs,1);assert.equal(p.db.old,'previous data');
 });
 // Exercise the actual browser save function with a refused server response.
 const html=fs.readFileSync(__dirname+'/index.html','utf8');

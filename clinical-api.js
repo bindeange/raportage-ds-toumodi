@@ -42,9 +42,9 @@ module.exports=function installClinical(app,pool,databaseUrl,legacyTables){
   try { res.json(await require('./report-save').saveReport(pool,req.clinicalActor,req.body)); }
   catch(e) {
    if(e.status)throw e;
-   console.error('Stock report save failed:',e.code,e.message);
+   console.error('Stock report save failed:',e.code,e.table,e.constraint,e.message);
    const messages={ '22P02':'Une quantité a un format incompatible avec la base.', '22003':'Une quantité dépasse la limite de la base.', '23503':'Un médicament ou indicateur est introuvable. Rechargez le rapport.', '23505':'Une ligne existe en double. Contactez le district.', '42501':'La base refuse cette opération. Contactez le district.' };
-   throw fail((messages[e.code]||'Enregistrement refusé par la base.')+' Aucun enregistrement complet n’a été confirmé. Gardez vos valeurs et vérifiez le rapport avant de réessayer.'+(e.code?' Référence : '+e.code+'.':''),500);
+   throw fail((messages[e.code]||'Enregistrement refusé par la base.')+' Aucun enregistrement complet n’a été confirmé. Gardez vos valeurs et vérifiez le rapport avant de réessayer.'+(e.code?' Référence : '+(e.code==='23505'?[e.code,e.table,e.constraint].filter(Boolean).join('/'):e.code)+'.':''),500);
   }
  }));
  // Suivi des validations (ancien tableau de bord public, désormais réservé aux utilisateurs connectés).

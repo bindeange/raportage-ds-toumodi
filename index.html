@@ -401,18 +401,20 @@
 <script>
 const API_URL = "/api/query";
 
-async function neonQuery(sql, params = []) {
+async function neonQuery(sql, params = [], { strict = false } = {}) {
     try {
         const res = await fetch(API_URL, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json', Authorization: 'Bearer '+window.clinicalToken },
             body: JSON.stringify({ query: sql, params })
         });
-        if (res.status === 401) { sessionExpired(); return []; }
-        if (!res.ok) { const e = await res.json(); console.error("Erreur serveur:", e); return []; }
+        if (res.status === 401) { sessionExpired(); if (strict) throw new Error("Session expirée. Reconnectez-vous."); return []; }
+        if (!res.ok) { const e = await res.json().catch(() => ({})); console.error("Erreur serveur:", e); if (strict) throw new Error(e.error || "Chargement du rapport impossible."); return []; }
         const data = await res.json();
+        if (strict && (!Array.isArray(data.rows) || data.error)) throw new Error(data.error || "Réponse de chargement invalide.");
         return data.rows || [];
     } catch (e) {
+        if (strict) throw e;
         console.error("Erreur connexion:", e);
         document.getElementById('login-msg').innerText = "Serveur injoignable. Verifiez que node server.js est lance.";
         return [];
@@ -559,21 +561,31 @@ async function showHome() {
     document.getElementById('saisie-zone').classList.add('no-disp');
 
     loader(true);
-    const [raps, ascRaps] = await Promise.all([
-        neonQuery(
-            `SELECT
-                m.famille_id,
-                MAX(r.statut) AS statut
+    document.getElementById('home-body').innerHTML = '<tr><td colspan="3">Chargement des rapports enregistrés…</td></tr>';
+    const readQuery = (sql, params = []) => neonQuery(sql, params, { strict: true });
+    let loaded;
+    try {
+    loaded = await Promise.all([
+        readQuery(
+            `SELECT f.famille_id,
+                (array_agg(r.statut ORDER BY (r.famille_id IS NOT NULL) DESC, r.id DESC))[1] AS statut
              FROM rapports r
-             JOIN rapport_stock_details rsd ON rsd.rapport_id = r.id
-             JOIN medicaments m ON m.id = rsd.medicament_id
-             WHERE r.entite_id = $1
-               AND r.mois = $2
-               AND r.annee = $3
-             GROUP BY m.famille_id`,
+             CROSS JOIN LATERAL (
+                 SELECT r.famille_id WHERE r.famille_id IS NOT NULL
+                 UNION
+                 SELECT m.famille_id FROM rapport_stock_details d
+                 JOIN medicaments m ON m.id=d.medicament_id
+                 WHERE d.rapport_id=r.id AND r.famille_id IS NULL
+                 UNION
+                 SELECT i.famille_id FROM rapport_indicateurs ri
+                 JOIN indicateurs i ON i.id=ri.indicateur_id
+                 WHERE ri.rapport_id=r.id AND r.famille_id IS NULL
+             ) f
+             WHERE r.entite_id=$1 AND r.mois=$2 AND r.annee=$3
+             GROUP BY f.famille_id`,
             [user.id, currentM, currentA]
         ),
-        neonQuery(`
+        readQuery(`
             SELECT DISTINCT ON (ae.id, f.id)
                 ae.id AS asc_entite_id,
                 ae.nom_entite AS asc_nom,
@@ -599,11 +611,16 @@ async function showHome() {
             ORDER BY ae.id, f.id, r.id DESC NULLS LAST
         `, [user.code_structure, currentM, currentA])
     ]);
-    loader(false);
+    } catch (e) {
+        document.getElementById('home-body').innerHTML = '<tr><td colspan="3">Chargement impossible. Revenez à cette page après reconnexion.</td></tr>';
+        alert('Impossible de vérifier les rapports déjà enregistrés : ' + e.message);
+        return;
+    } finally { loader(false); }
+    const [raps, ascRaps] = loaded;
 
     let html = "";
     listFamilles.forEach(f => {
-        const r = raps.find(rep => rep.famille_id === f.id);
+        const r = raps.find(rep => Number(rep.famille_id) === Number(f.id));
         const status = r?.statut || null;
         const locked = isLockedReportStatus(status);
         const statut = locked
@@ -1784,21 +1801,29 @@ async function startSaisie(fId, fNom, readOnly = false, targetPeriod = null) {
     saveBtn.classList.toggle('no-disp', currentReadOnly);
     saveBtn.innerText = isDistrict() ? 'ENREGISTRER LA CORRECTION DISTRICT' : 'ENVOYER LE RAPPORT AU DISTRICT';
 
+    saveBtn.disabled = true;
+    currentMeds = []; currentIndics = [];
+    document.getElementById('med-body').innerHTML = '';
+    document.getElementById('indic-body').innerHTML = '';
+    document.getElementById('print-btn').classList.add('no-disp');
     loader(true);
+    const readQuery = (sql, params = []) => neonQuery(sql, params, { strict: true });
 
     // Charger medicaments, indicateurs, dernier stock disponible ET livraisons du mois
     const previousPeriod = getPreviousPeriod(periodM, periodA);
-    const [meds, indics, indicLinks, stockPrecedent, rapportCourant, indicateursCourants, livraisons, rapportMeta] = await Promise.all([
-        neonQuery("SELECT id, dci, unite_comptage, code1, code2, code3, code4, code5 FROM medicaments WHERE famille_id = $1 ORDER BY dci", [fId]),
-        neonQuery("SELECT id, nom_indicateur, est_pnsme, type_saisie FROM indicateurs WHERE famille_id = $1 ORDER BY id", [fId]),
-        neonQuery(`
+    let loaded;
+    try {
+    loaded = await Promise.all([
+        readQuery("SELECT id, dci, unite_comptage, code1, code2, code3, code4, code5 FROM medicaments WHERE famille_id = $1 ORDER BY dci", [fId]),
+        readQuery("SELECT id, nom_indicateur, est_pnsme, type_saisie FROM indicateurs WHERE famille_id = $1 ORDER BY id", [fId]),
+        readQuery(`
             SELECT im.indicateur_id, im.medicament_id
             FROM indicateur_meds im
             JOIN medicaments m ON m.id = im.medicament_id
             WHERE m.famille_id = $1
         `, [fId]),
         // Stock initial du mois M = stock disponible du mois M-1 pour ce centre + famille
-        neonQuery(`
+        readQuery(`
             SELECT DISTINCT ON (rsd.medicament_id)
                 rsd.medicament_id,
                 rsd.stock_disponible
@@ -1813,9 +1838,10 @@ async function startSaisie(fId, fNom, readOnly = false, targetPeriod = null) {
             ORDER BY rsd.medicament_id, r.annee::integer DESC, r.mois::integer DESC, r.id DESC
         `, [reportUser.id, fId, previousPeriod.mois, previousPeriod.annee]),
         // Valeurs deja transmises pour la periode courante
-        neonQuery(`
-            SELECT
+        readQuery(`
+            SELECT DISTINCT ON (rsd.medicament_id)
                 rsd.medicament_id,
+                rsd.stock_initial,
                 rsd.quantite_recue,
                 rsd.quantite_distribuee,
                 rsd.pertes_ajustements,
@@ -1828,9 +1854,11 @@ async function startSaisie(fId, fNom, readOnly = false, targetPeriod = null) {
               AND m.famille_id = $2
               AND r.mois = $3
               AND r.annee = $4
+              AND (r.famille_id = $2 OR r.famille_id IS NULL)
+            ORDER BY rsd.medicament_id, (r.famille_id = $2) DESC NULLS LAST, r.id DESC
         `, [reportUser.id, fId, periodM, periodA]),
-        neonQuery(`
-            SELECT
+        readQuery(`
+            SELECT DISTINCT ON (ri.indicateur_id)
                 ri.indicateur_id,
                 ri.val_unique,
                 ri.val_nouvelle,
@@ -1843,10 +1871,11 @@ async function startSaisie(fId, fNom, readOnly = false, targetPeriod = null) {
               AND (r.famille_id = $2 OR r.famille_id IS NULL)
               AND r.mois = $3
               AND r.annee = $4
+            ORDER BY ri.indicateur_id, (r.famille_id = $2) DESC NULLS LAST, r.id DESC
         `, [reportUser.id, fId, periodM, periodA]),
         // Livraisons du mois en cours pour ce centre.
         // Correspondance tolerante: casse, espaces, tiret/underscore dans les codes produits.
-        neonQuery(`
+        readQuery(`
             SELECT
                 m.id AS medicament_id,
                 SUM(COALESCE(ld.quantite_livree, 0)) AS total_livre
@@ -1867,19 +1896,27 @@ async function startSaisie(fId, fNom, readOnly = false, targetPeriod = null) {
               AND m.famille_id = $4
             GROUP BY m.id
         `, [reportUser.code_structure, periodM, periodA, fId]),
-        neonQuery(`
+        readQuery(`
             SELECT id, statut, date_soumission
             FROM rapports
             WHERE entite_id = $1
-              AND (famille_id = $2 OR famille_id IS NULL)
+              AND (famille_id = $2 OR (famille_id IS NULL AND (
+                  EXISTS (SELECT 1 FROM rapport_stock_details d JOIN medicaments m ON m.id=d.medicament_id WHERE d.rapport_id=rapports.id AND m.famille_id=$2)
+                  OR EXISTS (SELECT 1 FROM rapport_indicateurs ri JOIN indicateurs i ON i.id=ri.indicateur_id WHERE ri.rapport_id=rapports.id AND i.famille_id=$2)
+              )))
               AND mois = $3
               AND annee = $4
             ORDER BY famille_id NULLS LAST, id DESC
             LIMIT 1
         `, [reportUser.id, fId, periodM, periodA])
     ]);
-
-    loader(false);
+    } catch (e) {
+        document.getElementById('form-title').innerText = 'Rapport non chargé — enregistrement bloqué';
+        alert('Impossible de charger les données déjà enregistrées : ' + e.message + '\nAucune nouvelle saisie ne peut être envoyée tant que le rapport n’est pas chargé.');
+        return;
+    } finally { loader(false); }
+    const [meds, indics, indicLinks, stockPrecedent, rapportCourant, indicateursCourants, livraisons, rapportMeta] = loaded;
+    saveBtn.disabled = false;
 
     currentReportStatus = rapportMeta[0]?.statut || null;
     const reportLocked = isLockedReportStatus(currentReportStatus);
@@ -1887,6 +1924,10 @@ async function startSaisie(fId, fNom, readOnly = false, targetPeriod = null) {
         currentReadOnly = true;
         saveBtn.classList.add('no-disp');
         document.getElementById('form-title').innerText = `Consultation : ${fNom} (${periodM}/${periodA})`;
+    }
+    if (rapportMeta.length && !currentReadOnly) {
+        document.getElementById('form-title').innerText =
+            `${isDistrict() ? 'Modification du rapport existant' : 'Reprise du rapport enregistré'} : ${fNom} (${periodM}/${periodA})`;
     }
     const canPrint = isLockedReportStatus(currentReportStatus);
     document.getElementById('print-btn').classList.toggle('no-disp', !canPrint);
@@ -1925,19 +1966,18 @@ async function startSaisie(fId, fNom, readOnly = false, targetPeriod = null) {
     // Tableau stocks
     document.getElementById('med-body').innerHTML = meds.length > 0
         ? meds.map(m => {
-            const init  = stockMap[m.id] ?? 0;
             const saved = currentStockMap[m.id];
+            const init = saved?.stock_initial != null ? (parseFloat(saved.stock_initial) || 0) : (stockMap[m.id] ?? 0);
             const livraisonDistrict = getLivraison(m);
             const savedRecu = saved ? parseFloat(saved.quantite_recue) || 0 : 0;
-            const livre = !reportLocked && livraisonDistrict > 0 ? livraisonDistrict : savedRecu;
+            const livre = saved ? savedRecu : (livraisonDistrict > 0 ? livraisonDistrict : 0);
             const dist = saved ? parseFloat(saved.quantite_distribuee) || 0 : 0;
             const pert = saved ? parseFloat(saved.pertes_ajustements) || 0 : 0;
             const comment = saved?.commentaire || '';
             const dispInit = saved ? parseFloat(saved.stock_disponible) || 0 : init + livre;
             const visible = init > 0 || livre > 0 || saved || dist > 0 || pert !== 0;
-            const livraisonNote = !reportLocked && livraisonDistrict > 0
-                ? `<br><small style="color:#27ae60;font-size:9px;">${livraisonDistrict} livres Neon</small>` +
-                  (saved && savedRecu !== livraisonDistrict ? `<br><small style="color:#f39c12;font-size:9px;">ancienne saisie: ${savedRecu}</small>` : '')
+            const livraisonNote = !saved && !reportLocked && livraisonDistrict > 0
+                ? `<br><small style="color:#27ae60;font-size:9px;">${livraisonDistrict} livres Neon</small>`
                 : '';
             if (!visible) hiddenMeds.push(m);
             return `<tr id="row_${m.id}" style="${visible ? '' : 'display:none;'}">

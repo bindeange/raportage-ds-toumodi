@@ -5,7 +5,46 @@ function number(value, label) {
     if (typeof value !== 'number' || !Number.isFinite(value)) throw fail(label + ' invalide.');
     return value;
 }
+// Imports supply explicit IDs, which do not advance PostgreSQL serial sequences.
+// Repair only a proven collision on the sole ID primary key, never a business key.
+async function repairIdSequence(pool, error) {
+    if (error.code !== '23505' || !['rapports', 'rapport_stock_details', 'rapport_indicateurs'].includes(error.table)
+        || error.schema && error.schema !== 'public' || !error.constraint) return false;
+    const c = await pool.connect();
+    try {
+        await c.query('BEGIN');
+        await c.query(`LOCK TABLE public.${error.table} IN SHARE ROW EXCLUSIVE MODE`);
+        const meta = await c.query(`SELECT pg_get_serial_sequence(format('%I.%I', n.nspname, t.relname), 'id') AS sequence_name
+            FROM pg_constraint p JOIN pg_class t ON t.oid=p.conrelid
+            JOIN pg_namespace n ON n.oid=t.relnamespace
+            JOIN pg_attribute a ON a.attrelid=t.oid AND a.attname='id'
+            WHERE n.nspname='public' AND t.relname=$1 AND p.conname=$2
+              AND p.contype='p' AND p.conkey=ARRAY[a.attnum]::smallint[]`, [error.table, error.constraint]);
+        const sequence = meta.rows[0]?.sequence_name;
+        if (!sequence) { await c.query('ROLLBACK'); return false; }
+        // Never move a counter backwards, even if a concurrent writer advanced it.
+        await c.query(`SELECT setval($1::regclass,
+            GREATEST(COALESCE((SELECT MAX(id) FROM public.${error.table}),0),
+                     COALESCE(pg_sequence_last_value($1::regclass),0))+1, false)`, [sequence]);
+        await c.query('COMMIT');
+        console.info('Repaired report ID sequence:', error.table);
+        return true;
+    } catch (e) {
+        await c.query('ROLLBACK').catch(() => {});
+        throw e;
+    } finally { c.release(); }
+}
 async function saveReport(pool, actor, body) {
+    const repaired = new Set();
+    for (;;) {
+        try { return await saveReportOnce(pool, actor, body); }
+        catch (e) {
+            if (repaired.has(e.table) || !await repairIdSequence(pool, e)) throw e;
+            repaired.add(e.table);
+        }
+    }
+}
+async function saveReportOnce(pool, actor, body) {
     if (!actor || !['ADMIN', 'USER'].includes(actor.role)) throw fail('Connexion requise.', 401);
     const { entite_id, famille_id, mois, annee, stocks, indicateurs } = body;
     for (const v of [entite_id, famille_id, mois, annee]) if (!Number.isInteger(v) || v <= 0) throw fail('Structure, famille ou période invalide.');
@@ -62,4 +101,4 @@ async function saveReport(pool, actor, body) {
         throw e;
     } finally { c.release(); }
 }
-module.exports = { saveReport };
+module.exports = { saveReport, repairIdSequence };
