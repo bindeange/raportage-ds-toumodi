@@ -198,8 +198,25 @@
                 <button id="district-tab-rapports" onclick="showDistrictReportsView()">Rapports</button>
                 <button id="district-tab-bilan" onclick="showDistrictBilanView()">Bilan</button>
                 <button id="district-tab-livraisons" onclick="showDistrictLivraisonsView()">Livraisons</button>
+                <button id="district-tab-requisitions" onclick="showDistrictRequisitions()">Réquisitions</button>
                 <button id="district-tab-period" onclick="showPeriodManager()">Periode</button>
                 <button id="district-tab-passwords" onclick="showPasswordManager()">Mots de passe</button>
+            </div>
+
+            <div id="district-requisitions-view" class="no-disp">
+                <div class="district-filters">
+                    <label>Mois de création <input id="requisitions-month" type="month" required></label>
+                    <button id="requisitions-read" type="button" class="btn-small">Afficher les réquisitions enregistrées</button>
+                </div>
+                <form id="requisitions-import" class="district-filters" autocomplete="off">
+                    <label>Identifiant mSupply <input id="requisitions-user" type="text" required maxlength="200"></label>
+                    <label>Mot de passe mSupply <input id="requisitions-password" type="password" required maxlength="512" autocomplete="off"></label>
+                    <button type="submit" class="btn-small">Importer / actualiser depuis mSupply</button>
+                </form>
+                <p id="requisitions-status" role="status" aria-live="polite"></p>
+                <div class="table-scroll" style="overflow:auto; max-height:65vh;">
+                    <table><thead id="requisitions-head"></thead><tbody id="requisitions-body"></tbody></table>
+                </div>
             </div>
 
             <div id="district-dashboard-view">
@@ -397,6 +414,7 @@
 <script src="/dispensation_summary.js"></script>
 <script src="/clinical-fields.js?v=20260920"></script>
 <script src="/clinical-ui.js?v=20260920"></script>
+<script src="/requisitions-ui.js"></script>
 <script src="/dashboard.js?v=20260920"></script>
 <script>
 const API_URL = "/api/query";
@@ -765,12 +783,14 @@ function setDistrictTab(tab) {
     document.getElementById('district-tab-rapports').classList.toggle('active', tab === 'rapports');
     document.getElementById('district-tab-bilan').classList.toggle('active', tab === 'bilan');
     document.getElementById('district-tab-livraisons').classList.toggle('active', tab === 'livraisons');
+    document.getElementById('district-tab-requisitions').classList.toggle('active', tab === 'requisitions');
     document.getElementById('district-tab-period').classList.toggle('active', tab === 'period');
     document.getElementById('district-tab-passwords').classList.toggle('active', tab === 'passwords');
     document.getElementById('district-dashboard-view').classList.toggle('no-disp', tab !== 'dashboard');
     document.getElementById('district-reports-view').classList.toggle('no-disp', tab !== 'rapports');
     document.getElementById('district-bilan-view').classList.toggle('no-disp', tab !== 'bilan');
     document.getElementById('district-livraisons-view').classList.toggle('no-disp', tab !== 'livraisons');
+    document.getElementById('district-requisitions-view').classList.toggle('no-disp', tab !== 'requisitions');
     document.getElementById('district-period-view').classList.toggle('no-disp', tab !== 'period');
     document.getElementById('district-passwords-view').classList.toggle('no-disp', tab !== 'passwords');
 }
