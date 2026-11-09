@@ -181,9 +181,8 @@ function installRequisitions(app, pool) {
     }, false));
     app.get('/api/requisitions/comparison', route(async (req, res) => {
         const { start } = period(req.query.month);
-        const first = new Date(start);
-        first.setUTCMonth(first.getUTCMonth() - 5);
-        const { rows } = await pool.query(comparisonSql, [first.toISOString().slice(0, 10), start.slice(0, 10)]);
+        const month = start.slice(0, 10);
+        const { rows } = await pool.query(comparisonSql, [month, month]);
         res.json({ ok: true, rows });
     }));
     app.get('/api/requisitions', route(async (req, res) => {

@@ -10,10 +10,10 @@ if (isset($_GET['data'])) {
     header('Cache-Control: no-store');
     try {
         [$start] = msupplyRequisitionMonth(is_string($_GET['month'] ?? null) ? $_GET['month'] : '');
-        $last = new DateTimeImmutable($start);
+        $month = (new DateTimeImmutable($start))->format('Y-m-d');
         $sql = file_get_contents(__DIR__ . '/requisition-comparison.sql');
         $statement = $pdo->prepare(preg_replace('/\$[12]/', '?', $sql));
-        $statement->execute([$last->modify('-5 months')->format('Y-m-d'), $last->format('Y-m-d')]);
+        $statement->execute([$month, $month]);
         $rows = $statement->fetchAll(PDO::FETCH_ASSOC);
         foreach ($rows as &$row) {
             foreach (['msupply', 'physical'] as $column) {
@@ -47,8 +47,8 @@ $month = sprintf('%04d-%02d', (int)($settings['annee_active'] ?? gmdate('Y')), (
 <body>
 <?php require __DIR__ . '/header.php'; ?>
 <main id="comparison" style="padding:1rem"></main>
-<script src="requisition-comparison-export.js"></script>
-<script src="requisition-comparison.js?v=4"></script>
+<script src="requisition-comparison-export.js?v=mensuel"></script>
+<script src="requisition-comparison.js?v=mensuel"></script>
 <script>
 window.mountRequisitionComparison(document.getElementById('comparison'), {
     month: <?= json_encode($month) ?>,
