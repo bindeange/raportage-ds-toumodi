@@ -277,7 +277,7 @@
                                 <th>Stock recu</th>
                                 <th>Stock distribue</th>
                                 <th>Perte</th>
-                                <th>Ajustement</th>
+                                <th>Ajout</th>
                                 <th>Stock disponible</th>
                             </tr>
                         </thead>
@@ -376,7 +376,7 @@
                                 <th>Recu</th>
                                 <th>Distribue</th>
                                 <th>Perte</th>
-                                <th>Ajustement</th>
+                                <th>Ajout</th>
                                 <th>Disponible</th>
                             </tr>
                         </thead>
@@ -1796,6 +1796,37 @@ async function reopenReport(rapportId) {
 }
 
 // 4. Formulaire de saisie
+async function showRequisitionReferences(meds, structure, programme, year, month) {
+    const targets = new Map(meds.map(m => [Number(m.id), [...document.querySelectorAll(`#row_${m.id} [data-msupply]`)]]));
+    const query = new URLSearchParams({ structure, programme, month: `${year}-${String(month).padStart(2, '0')}` });
+    try {
+        const response = await fetch('/api/clinical/requisition-stock?' + query, {
+            headers: { Authorization: 'Bearer ' + window.clinicalToken }, signal: AbortSignal.timeout(8000)
+        });
+        if (!response.ok) return;
+        const { rows } = await response.json();
+        for (const reference of rows) {
+            const cells = targets.get(Number(reference.medicament_id));
+            if (!cells?.[0]?.isConnected) continue;
+            reference.values.forEach((value, index) => {
+                if (typeof value !== 'number' || value === 0 || !cells[index]) return;
+                const note = document.createElement('small');
+                note.style.cssText = 'display:block;color:#b42318;font-weight:600';
+                note.textContent = `mSupply n°${reference.requisition_number} · ${new Intl.NumberFormat('fr-FR').format(value)}`;
+                cells[index].appendChild(note);
+                const row = cells[index].closest('tr');
+                if (row.style.display === 'none') {
+                    row.dataset.msupplyOnly = 'true';
+                    row.style.display = 'table-row';
+                    row.addEventListener('input', () => { delete row.dataset.msupplyOnly; }, { once: true });
+                }
+            });
+        }
+    } catch (error) {
+        console.warn('Repères mSupply indisponibles.', error.name);
+    }
+}
+
 async function startSaisie(fId, fNom, readOnly = false, targetPeriod = null) {
     currentFamilleId  = fId;
     currentFamilleNom = fNom;
@@ -2006,17 +2037,17 @@ async function startSaisie(fId, fNom, readOnly = false, targetPeriod = null) {
             if (!visible) hiddenMeds.push(m);
             return `<tr id="row_${m.id}" style="${visible ? '' : 'display:none;'}">
                 <td align="left"><b>${m.dci}</b><br><small style="color:#7f8c8d;">${m.unite_comptage}</small></td>
-                <td class="st-init" id="st_${m.id}">${init}</td>
+                <td class="st-init"><span id="st_${m.id}">${init}</span><span data-msupply></span></td>
                 <td>
                     <input type="number" class="input-saisie" id="rec_${m.id}" value="${livre}" min="0" oninput="calc(${m.id})">
-                    ${livraisonNote}
+                    ${livraisonNote}<span data-msupply></span>
                 </td>
-                <td><input type="number" class="input-saisie" id="dist_${m.id}" value="${dist}" min="0" oninput="calc(${m.id})"></td>
-                <td><input type="number" class="input-saisie" id="pert_${m.id}" value="${pert}" min="0" step="any" oninput="calc(${m.id})"></td>
-                <td><input type="number" class="input-saisie" id="ajust_${m.id}" value="${ajust}" min="0" step="any" oninput="calc(${m.id})"></td>
-                <td><input type="number" class="input-saisie" id="disp_${m.id}" value="${dispInit}" min="0" oninput="calc(${m.id})"></td>
+                <td><input type="number" class="input-saisie" id="dist_${m.id}" value="${dist}" min="0" oninput="calc(${m.id})"><span data-msupply></span></td>
+                <td><input type="number" class="input-saisie" id="pert_${m.id}" value="${pert}" min="0" step="any" oninput="calc(${m.id})"><span data-msupply></span></td>
+                <td><input type="number" class="input-saisie" id="ajust_${m.id}" value="${ajust}" min="0" step="any" oninput="calc(${m.id})"><span data-msupply></span></td>
+                <td><input type="number" class="input-saisie" id="disp_${m.id}" value="${dispInit}" min="0" oninput="calc(${m.id})"><span data-msupply></span></td>
             </tr>
-            ${[['pert', 'Perte', pert, saved?.justification_perte], ['ajust', 'Ajustement', ajust, saved?.justification_ajustement]].map(([field, label, value, reason]) => `
+            ${[['pert', 'Perte', pert, saved?.justification_perte], ['ajust', 'Ajout', ajust, saved?.justification_ajustement]].map(([field, label, value, reason]) => `
             <tr id="row_${field}_${m.id}" style="display:${visible && value > 0 ? 'table-row' : 'none'}; background:#fffde7;">
                 <td colspan="2" align="right"><label for="reason_${field}_${m.id}">Justification ${label}</label></td>
                 <td colspan="5"><input type="text" maxlength="10000" id="reason_${field}_${m.id}" value="${htmlEscape(reason || '')}" style="width:100%;"></td>
@@ -2029,6 +2060,7 @@ async function startSaisie(fId, fNom, readOnly = false, targetPeriod = null) {
     hiddenBox.classList.toggle('no-disp', hiddenMeds.length === 0 || currentReadOnly);
     hiddenSelect.innerHTML = '<option value="">-- Choisir --</option>' +
         hiddenMeds.map(m => `<option value="${m.id}">${m.dci}</option>`).join('');
+    showRequisitionReferences(meds, reportUser.id, fId, periodA, periodM);
 
     // Tableau indicateurs: PHP = PNSME avec deux champs, autres programmes avec une valeur unique.
     const hasPnsme = indics.some(i => i.est_pnsme);
@@ -2066,7 +2098,10 @@ function isIndicatorLinked(indicateurId) {
 function revealMedication(id) {
     if (!id) return;
     const row = document.getElementById('row_' + id);
-    if (row) row.style.display = 'table-row';
+    if (row) {
+        row.style.display = 'table-row';
+        delete row.dataset.msupplyOnly;
+    }
 
     const select = document.getElementById('hidden-meds-select');
     const option = select?.querySelector(`option[value="${id}"]`);
@@ -2167,13 +2202,13 @@ async function saveData() {
     if (saveButton.disabled) return;
     for (const m of currentMeds) {
         const row = document.getElementById('row_' + m.id);
-        if (row && row.style.display === 'none') continue;
+        if (row && (row.style.display === 'none' || row.dataset.msupplyOnly)) continue;
 
         if (calc(m.id)) {
-            alert('Vérifiez les quantités et le bilan de ' + m.dci + ' : initial + reçu − distribué − perte + ajustement − disponible = 0.');
+            alert('Vérifiez les quantités et le bilan de ' + m.dci + ' : initial + reçu − distribué − perte + ajout − disponible = 0.');
             return;
         }
-        for (const [field, label] of [['pert', 'la perte'], ['ajust', 'l’ajustement']]) {
+        for (const [field, label] of [['pert', 'la perte'], ['ajust', 'l’ajout']]) {
             const reason = document.getElementById('reason_' + field + '_' + m.id);
             if (Number(document.getElementById(field + '_' + m.id).value) > 0 && !reason.value.trim()) {
                 alert('Justifiez ' + label + ' pour ' + m.dci + '.');
@@ -2197,7 +2232,7 @@ async function saveData() {
         const stocks = [], indicateurs = [];
         for (const m of currentMeds) {
             const row = document.getElementById('row_' + m.id);
-            if (row && row.style.display === 'none') continue;
+            if (row && (row.style.display === 'none' || row.dataset.msupplyOnly)) continue;
 
             const st   = parseFloat(document.getElementById('st_'   + m.id).innerText) || 0;
             const rec  = parseFloat(document.getElementById('rec_'  + m.id).value)     || 0;
