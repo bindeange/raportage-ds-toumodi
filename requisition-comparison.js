@@ -1,5 +1,5 @@
 (() => {
-    const fields = ['Stock initial', 'Reçu', 'Distribué', 'Perte', 'Ajout', 'Disponible'];
+    const fields = ['Stock initial', 'Reçu', 'Dispensé', 'Stock disponible'];
     const monthFormat = new Intl.DateTimeFormat('fr-FR', { month: 'short', year: 'numeric', timeZone: 'UTC' });
     const dateFormat = new Intl.DateTimeFormat('fr-FR', { dateStyle: 'short', timeZone: 'UTC' });
     const fmt = new Intl.NumberFormat('fr-FR', { maximumFractionDigits: 3 });
@@ -29,7 +29,8 @@
         else if (msupply.length > 1 || physical.length > 1) status = 'ambiguous';
         else if (!msupply.length) status = 'missing-msupply';
         else if (!physical.length) status = 'missing-physical';
-        else if (![...msupply[0].values, ...physical[0].values].every(Number.isFinite)) status = 'incomplete';
+        else if (![msupply[0].values, physical[0].values].every(values =>
+            Array.isArray(values) && values.length === fields.length && values.every(Number.isFinite))) status = 'incomplete';
         else {
             deltas = fields.map((_, i) => (Math.round(physical[0].values[i] * 1000) - Math.round(msupply[0].values[i] * 1000)) / 1000);
             status = deltas.some(value => value !== 0) ? 'different' : 'equal';
@@ -134,7 +135,7 @@
 
     const markup = `
         <h2>Écarts mSupply</h2>
-        <p>Comparaison du rapport saisi dans SYGESS avec les réquisitions créées le mois suivant. Écart = SYGESS − mSupply.</p>
+        <p>Contrôle de cohérence entre les valeurs rapportées dans mSupply et celles recueillies dans SYGESS. Les réquisitions sont créées le mois suivant. Écart = SYGESS − mSupply.</p>
         <div class="rc-filters">
             <label>Mois d’activité <input data-rc="month" type="month" required></label>
             <label>Structure <select data-rc="structure"><option value="">Toutes</option></select></label>

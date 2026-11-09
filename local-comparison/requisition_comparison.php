@@ -48,7 +48,7 @@ $month = sprintf('%04d-%02d', (int)($settings['annee_active'] ?? gmdate('Y')), (
 <?php require __DIR__ . '/header.php'; ?>
 <main id="comparison" style="padding:1rem"></main>
 <script src="requisition-comparison-export.js"></script>
-<script src="requisition-comparison.js"></script>
+<script src="requisition-comparison.js?v=4"></script>
 <script>
 window.mountRequisitionComparison(document.getElementById('comparison'), {
     month: <?= json_encode($month) ?>,
