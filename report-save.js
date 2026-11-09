@@ -55,17 +55,22 @@ async function saveReportOnce(pool, actor, body) {
         if (rows.some(r => !r || !Number.isInteger(r[key]) || r[key] <= 0) || new Set(rows.map(r => r[key])).size !== rows.length) throw fail('Lignes invalides ou en double.');
     }
     for (const row of stocks) {
-        for (const k of ['stock_initial', 'quantite_recue', 'quantite_distribuee', 'pertes_ajustements', 'stock_disponible']) number(row[k], k);
-        if (['stock_initial', 'quantite_recue', 'quantite_distribuee', 'stock_disponible'].some(k => row[k] < 0)) throw fail('Les quantités de stock doivent être positives ou nulles.');
-        // Same signed adjustment and thousandth rounding as the existing form/PHP.
-        const expected = row.stock_initial + row.quantite_recue - row.quantite_distribuee + row.pertes_ajustements;
+        for (const k of ['stock_initial', 'quantite_recue', 'quantite_distribuee', 'stock_disponible']) {
+            if (number(row[k], k) < 0) throw fail('Les quantités de stock doivent être positives ou nulles.');
+        }
+        if (number(row.perte, 'Perte') < 0) throw fail('La perte doit être positive ou nulle.');
+        if (number(row.ajustement, 'Ajustement') < 0) throw fail('L’ajustement doit être positif ou nul.');
+        const expected = row.stock_initial + row.quantite_recue - row.quantite_distribuee - row.perte + row.ajustement;
         if (Math.round(expected * 1000) !== Math.round(row.stock_disponible * 1000)) {
             throw fail('Bilan de stock incorrect pour le médicament ' + row.medicament_id
                 + ' : disponible attendu ' + Number(expected.toFixed(3)) + ', saisi ' + row.stock_disponible
-                + '. Règle : initial + reçu - distribué + ajustement.');
+                + '. Règle : initial + reçu - distribué - perte + ajustement.');
         }
-        if (row.commentaire != null && (typeof row.commentaire !== 'string' || row.commentaire.length > 10000)) throw fail('Justification invalide.');
-        if (row.pertes_ajustements !== 0 && !row.commentaire?.trim()) throw fail('Justifiez les pertes ou ajustements.');
+        for (const [quantity, label] of [['perte', 'la perte'], ['ajustement', 'l’ajustement']]) {
+            const reason = row['justification_' + quantity];
+            if (reason != null && (typeof reason !== 'string' || reason.length > 10000)) throw fail('Justification invalide.');
+            if (row[quantity] !== 0 && !reason?.trim()) throw fail('Justifiez ' + label + ' pour le médicament ' + row.medicament_id + '.');
+        }
     }
     for (const row of indicateurs) for (const k of ['val_unique', 'val_nouvelle', 'val_ancienne']) if (number(row[k], k) < 0) throw fail('Indicateur négatif.');
     const c = await pool.connect();
@@ -92,8 +97,11 @@ async function saveReportOnce(pool, actor, body) {
         await c.query('DELETE FROM rapport_stock_details WHERE rapport_id=$1', [id]);
         await c.query('DELETE FROM rapport_indicateurs WHERE rapport_id=$1', [id]);
         for (const r of stocks) {
-            const saved = await c.query(`INSERT INTO rapport_stock_details (rapport_id,medicament_id,stock_initial,quantite_recue,quantite_distribuee,pertes_ajustements,stock_disponible,commentaire)
-                VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING medicament_id`, [id, r.medicament_id, r.stock_initial, r.quantite_recue, r.quantite_distribuee, r.pertes_ajustements, r.stock_disponible, r.commentaire || null]);
+            const saved = await c.query(`INSERT INTO rapport_stock_details
+                (rapport_id,medicament_id,stock_initial,quantite_recue,quantite_distribuee,perte,ajustement,stock_disponible,justification_perte,justification_ajustement)
+                VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) RETURNING medicament_id`,
+            [id, r.medicament_id, r.stock_initial, r.quantite_recue, r.quantite_distribuee, r.perte, r.ajustement,
+                r.stock_disponible, r.justification_perte?.trim() || null, r.justification_ajustement?.trim() || null]);
             if (saved.rowCount !== 1) throw Error('Ligne de stock non enregistrée.');
         }
         for (const r of indicateurs) {

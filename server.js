@@ -100,7 +100,7 @@ const NEON_COLUMNS = {
     cmm_structures: ['id', 'code_structure', 'medicament_id', 'valeur_cmm_theorique'],
     parametres: ['cle', 'valeur'],
     rapports: ['id', 'entite_id', 'mois', 'annee', 'statut', 'famille_id', 'date_soumission'],
-    rapport_stock_details: ['id', 'rapport_id', 'medicament_id', 'stock_initial', 'quantite_recue', 'quantite_distribuee', 'pertes_ajustements', 'stock_disponible', 'commentaire'],
+    rapport_stock_details: ['id', 'rapport_id', 'medicament_id', 'stock_initial', 'quantite_recue', 'quantite_distribuee', 'pertes_ajustements', 'stock_disponible', 'commentaire', 'perte', 'ajustement', 'justification_perte', 'justification_ajustement'],
     rapport_indicateurs: ['id', 'rapport_id', 'indicateur_id', 'val_unique', 'val_nouvelle', 'val_ancienne'],
     livraisons_district: ['id', 'code_structure', 'code_med', 'quantite_livree', 'mois', 'annee', 'num_facture', 'date_livraison', 'type_livraison', 'reference_livraison'],
     livraisons_urgentes: ['id', 'code_structure', 'code_med', 'medicament_id', 'quantite_livree', 'mois', 'annee', 'num_facture', 'date_livraison', 'motif', 'reference_livraison', 'created_at']
@@ -404,6 +404,10 @@ app.get('/api/sync/export-retours', async (req, res) => {
                     d.quantite_recue,
                     d.quantite_distribuee,
                     d.pertes_ajustements,
+                    d.perte,
+                    d.ajustement,
+                    d.justification_perte,
+                    d.justification_ajustement,
                     d.stock_disponible,
                     d.commentaire
                 FROM rapports r
@@ -523,7 +527,13 @@ app.post('/api/admin/setup-allocation-params', async (_req, res) => {
 });
 
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => {
-    console.log('\n🏥 Serveur SYGESS TOUMODI démarré');
-    console.log('👉 Ouvrez : http://localhost:' + PORT + '\n');
-});
+pool.query(fs.readFileSync(path.join(__dirname, 'stock-movements.sql'), 'utf8'))
+    .then(() => app.listen(PORT, () => {
+        console.log('\n🏥 Serveur SYGESS TOUMODI démarré');
+        console.log('👉 Ouvrez : http://localhost:' + PORT + '\n');
+    }))
+    .catch(error => {
+        console.error('Migration des mouvements de stock impossible', error.code);
+        process.exitCode = 1;
+        return pool.end();
+    });

@@ -276,8 +276,8 @@
                                 <th>Stock initial</th>
                                 <th>Stock recu</th>
                                 <th>Stock distribue</th>
-                                <th>Pertes negatives</th>
-                                <th>Pertes positives</th>
+                                <th>Perte</th>
+                                <th>Ajustement</th>
                                 <th>Stock disponible</th>
                             </tr>
                         </thead>
@@ -375,7 +375,8 @@
                                 <th>Stock Initial</th>
                                 <th>Recu</th>
                                 <th>Distribue</th>
-                                <th>Pertes/Ajust.</th>
+                                <th>Perte</th>
+                                <th>Ajustement</th>
                                 <th>Disponible</th>
                             </tr>
                         </thead>
@@ -1068,8 +1069,8 @@ async function loadDistrictBilan() {
                 SUM(COALESCE(rsd.stock_initial, 0)) AS stock_initial,
                 SUM(COALESCE(rsd.quantite_recue, 0)) AS quantite_recue,
                 SUM(COALESCE(rsd.quantite_distribuee, 0)) AS quantite_distribuee,
-                SUM(CASE WHEN COALESCE(rsd.pertes_ajustements, 0) < 0 THEN COALESCE(rsd.pertes_ajustements, 0) ELSE 0 END) AS pertes_negatives,
-                SUM(CASE WHEN COALESCE(rsd.pertes_ajustements, 0) > 0 THEN COALESCE(rsd.pertes_ajustements, 0) ELSE 0 END) AS pertes_positives,
+                SUM(COALESCE(rsd.perte, 0)) AS pertes_negatives,
+                SUM(COALESCE(rsd.ajustement, 0)) AS pertes_positives,
                 SUM(COALESCE(rsd.stock_disponible, 0)) AS stock_disponible
             FROM rapports r
             JOIN visible_entities ve ON ve.entite_id = r.entite_id
@@ -1864,7 +1865,10 @@ async function startSaisie(fId, fNom, readOnly = false, targetPeriod = null) {
                 rsd.stock_initial,
                 rsd.quantite_recue,
                 rsd.quantite_distribuee,
-                rsd.pertes_ajustements,
+                rsd.perte,
+                rsd.ajustement,
+                rsd.justification_perte,
+                rsd.justification_ajustement,
                 rsd.stock_disponible,
                 rsd.commentaire
             FROM rapports r
@@ -1992,10 +1996,10 @@ async function startSaisie(fId, fNom, readOnly = false, targetPeriod = null) {
             const savedRecu = saved ? parseFloat(saved.quantite_recue) || 0 : 0;
             const livre = saved ? savedRecu : (livraisonDistrict > 0 ? livraisonDistrict : 0);
             const dist = saved ? parseFloat(saved.quantite_distribuee) || 0 : 0;
-            const pert = saved ? parseFloat(saved.pertes_ajustements) || 0 : 0;
-            const comment = saved?.commentaire || '';
+            const pert = Number(saved?.perte) || 0;
+            const ajust = Number(saved?.ajustement) || 0;
             const dispInit = saved ? parseFloat(saved.stock_disponible) || 0 : init + livre;
-            const visible = init > 0 || livre > 0 || saved || dist > 0 || pert !== 0;
+            const visible = init > 0 || livre > 0 || saved || dist > 0 || pert > 0 || ajust > 0;
             const livraisonNote = !saved && !reportLocked && livraisonDistrict > 0
                 ? `<br><small style="color:#27ae60;font-size:9px;">${livraisonDistrict} livres Neon</small>`
                 : '';
@@ -2008,15 +2012,17 @@ async function startSaisie(fId, fNom, readOnly = false, targetPeriod = null) {
                     ${livraisonNote}
                 </td>
                 <td><input type="number" class="input-saisie" id="dist_${m.id}" value="${dist}" min="0" oninput="calc(${m.id})"></td>
-                <td><input type="number" class="input-saisie" id="pert_${m.id}" value="${pert}" oninput="calc(${m.id})"></td>
+                <td><input type="number" class="input-saisie" id="pert_${m.id}" value="${pert}" min="0" step="any" oninput="calc(${m.id})"></td>
+                <td><input type="number" class="input-saisie" id="ajust_${m.id}" value="${ajust}" min="0" step="any" oninput="calc(${m.id})"></td>
                 <td><input type="number" class="input-saisie" id="disp_${m.id}" value="${dispInit}" min="0" oninput="calc(${m.id})"></td>
             </tr>
-            <tr id="row_comm_${m.id}" style="display:${visible && pert !== 0 ? 'table-row' : 'none'}; background:#fffde7;">
-                <td colspan="2" align="right" style="color:#f39c12; font-size:11px; font-weight:bold;">Justification :</td>
-                <td colspan="4"><input type="text" id="comment_${m.id}" value="${String(comment).replace(/"/g, '&quot;')}" placeholder="Justifier la perte ou l'ajustement" style="width:100%;"></td>
-            </tr>`;
+            ${[['pert', 'Perte', pert, saved?.justification_perte], ['ajust', 'Ajustement', ajust, saved?.justification_ajustement]].map(([field, label, value, reason]) => `
+            <tr id="row_${field}_${m.id}" style="display:${visible && value > 0 ? 'table-row' : 'none'}; background:#fffde7;">
+                <td colspan="2" align="right"><label for="reason_${field}_${m.id}">Justification ${label}</label></td>
+                <td colspan="5"><input type="text" maxlength="10000" id="reason_${field}_${m.id}" value="${htmlEscape(reason || '')}" style="width:100%;"></td>
+            </tr>`).join('')}`;
         }).join('')
-        : '<tr><td colspan="6" style="color:#aaa;">Aucun medicament pour ce programme</td></tr>';
+        : '<tr><td colspan="7" style="color:#aaa;">Aucun medicament pour ce programme</td></tr>';
 
     const hiddenBox = document.getElementById('hidden-meds-box');
     const hiddenSelect = document.getElementById('hidden-meds-select');
@@ -2103,13 +2109,16 @@ function calc(id) {
     const rec  = parseFloat(document.getElementById('rec_'  + id).value)     || 0;
     const dist = parseFloat(document.getElementById('dist_' + id).value)     || 0;
     const pert = parseFloat(document.getElementById('pert_' + id).value)     || 0;
-    const disp = parseFloat(document.getElementById('disp_' + id).value)     || 0;
-    const commentRow = document.getElementById('row_comm_' + id);
-    if (commentRow) commentRow.style.display = pert !== 0 ? 'table-row' : 'none';
-    // Meme regle que le PHP : Init + Recu - Dist + Pert = Disponible.
-    const theorique = st + rec - dist + pert;
-    document.getElementById('row_' + id).classList.toggle('row-error', Math.round(theorique * 1000) !== Math.round(disp * 1000));
+    const ajust = parseFloat(document.getElementById('ajust_' + id).value) || 0;
+    const disp = parseFloat(document.getElementById('disp_' + id).value) || 0;
+    document.getElementById('row_pert_' + id).style.display = pert > 0 ? 'table-row' : 'none';
+    document.getElementById('row_ajust_' + id).style.display = ajust > 0 ? 'table-row' : 'none';
+    const theorique = st + rec - dist - pert + ajust;
+    const invalid = [st, rec, dist, pert, ajust, disp].some(value => value < 0) ||
+        Math.round(theorique * 1000) !== Math.round(disp * 1000);
+    document.getElementById('row_' + id).classList.toggle('row-error', invalid);
     updateIndicatorVisibility();
+    return invalid;
 }
 
 function printCurrentReport() {
@@ -2156,22 +2165,21 @@ async function saveData() {
 
     const saveButton = document.getElementById('save-btn');
     if (saveButton.disabled) return;
-    const errors = document.querySelectorAll('.row-error');
-    if (errors.length > 0) {
-        alert(`${errors.length} ligne(s) en erreur (fond rouge).\nVerifiez que : Stock Initial + Recu - Distribue + Ajustement = Disponible (perte : ajustement negatif)`);
-        return;
-    }
-
     for (const m of currentMeds) {
         const row = document.getElementById('row_' + m.id);
         if (row && row.style.display === 'none') continue;
 
-        const pert = parseFloat(document.getElementById('pert_' + m.id).value) || 0;
-        const comment = document.getElementById('comment_' + m.id)?.value.trim() || '';
-        if (pert !== 0 && !comment) {
-            alert("Veuillez justifier chaque perte/ajustement dans la ligne Justification.");
-            document.getElementById('comment_' + m.id)?.focus();
+        if (calc(m.id)) {
+            alert('Vérifiez les quantités et le bilan de ' + m.dci + ' : initial + reçu − distribué − perte + ajustement − disponible = 0.');
             return;
+        }
+        for (const [field, label] of [['pert', 'la perte'], ['ajust', 'l’ajustement']]) {
+            const reason = document.getElementById('reason_' + field + '_' + m.id);
+            if (Number(document.getElementById(field + '_' + m.id).value) > 0 && !reason.value.trim()) {
+                alert('Justifiez ' + label + ' pour ' + m.dci + '.');
+                reason.focus();
+                return;
+            }
         }
     }
 
@@ -2195,12 +2203,13 @@ async function saveData() {
             const rec  = parseFloat(document.getElementById('rec_'  + m.id).value)     || 0;
             const dist = parseFloat(document.getElementById('dist_' + m.id).value)     || 0;
             const pert = parseFloat(document.getElementById('pert_' + m.id).value)     || 0;
+            const ajust = parseFloat(document.getElementById('ajust_' + m.id).value)   || 0;
             const disp = parseFloat(document.getElementById('disp_' + m.id).value)     || 0;
-            const rawComment = document.getElementById('comment_' + m.id)?.value.trim() || null;
-            const comment = pert !== 0 ? rawComment : null;
 
             stocks.push({ medicament_id: Number(m.id), stock_initial: st, quantite_recue: rec,
-                quantite_distribuee: dist, pertes_ajustements: pert, stock_disponible: disp, commentaire: comment });
+                quantite_distribuee: dist, perte: pert, ajustement: ajust, stock_disponible: disp,
+                justification_perte: pert > 0 ? document.getElementById('reason_pert_' + m.id).value.trim() : null,
+                justification_ajustement: ajust > 0 ? document.getElementById('reason_ajust_' + m.id).value.trim() : null });
         }
         for (const i of currentIndics) {
             const row = document.getElementById('indic_row_' + i.id);

@@ -17,13 +17,14 @@ function context(responses, {fail=false, admin=true}={}) {
         isIndicatorLinked:()=>false,updateIndicatorVisibility(){},
         neonQuery:async(sql,params,options)=>{requests.push({sql,params,options});if(fail)throw Error('lecture refusée');return responses[count++];}
     };
-    vm.createContext(ctx);vm.runInContext(loading,ctx);
+    vm.createContext(ctx);vm.runInContext(source('function htmlEscape(', '\nfunction '),ctx);vm.runInContext(loading,ctx);
     return {ctx,get,alerts,requests,loaders};
 }
 const rows = () => [
     [{id:7,dci:'Produit',unite_comptage:'comprimés'}], [{id:8,nom_indicateur:'Indicateur',est_pnsme:false}], [],
     [{medicament_id:7,stock_disponible:10}],
-    [{medicament_id:7,stock_initial:50,quantite_recue:7,quantite_distribuee:3,pertes_ajustements:0,stock_disponible:54}],
+    [{medicament_id:7,stock_initial:50,quantite_recue:7,quantite_distribuee:3,perte:2,ajustement:2,stock_disponible:54,
+        justification_perte:'Casse',justification_ajustement:'Comptage "A"'}],
     [{indicateur_id:8,val_unique:5,val_nouvelle:0,val_ancienne:0}],
     [{medicament_id:7,total_livre:99}], [{id:12,statut:'TRANSMIS'}]
 ];
@@ -33,6 +34,10 @@ test('reopening a report displays its saved opening stock, received quantity and
     assert.match(body,/id="st_7">50</);
     assert.match(body,/id="rec_7" value="7"/);
     assert.match(body,/id="disp_7" value="54"/);
+    assert.match(body,/id="pert_7" value="2"/);
+    assert.match(body,/id="ajust_7" value="2"/);
+    assert.match(body,/id="reason_pert_7" value="Casse"/);
+    assert.match(body,/id="reason_ajust_7" value="Comptage &quot;A&quot;"/);
     assert.match(c.get('indic-body').innerHTML,/id="ind_u_8" value="5"/);
     assert.match(c.get('form-title').innerText,/Modification du rapport existant/);
     assert.equal(c.get('save-btn').disabled,false);

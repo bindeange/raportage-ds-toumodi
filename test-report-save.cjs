@@ -5,7 +5,7 @@ const fs = require('node:fs');
 const {saveReport, repairIdSequence} = require('./report-save');
 const actor = {id: 2, role: 'USER'};
 const payload = () => ({entite_id: 2, famille_id: 1, mois: 11, annee: 2026,
- stocks: [{medicament_id: 7, stock_initial: 10, quantite_recue: 5, quantite_distribuee: 3, pertes_ajustements: 0, stock_disponible: 12, commentaire: null}],
+ stocks: [{medicament_id: 7, stock_initial: 10, quantite_recue: 5, quantite_distribuee: 3, perte: 0, ajustement: 0, stock_disponible: 12}],
  indicateurs: [{indicateur_id: 8, val_unique: 3, val_nouvelle: 0, val_ancienne: 0}]});
 function database({failIndicator=false,status=null,month='11',foreignLine=false}={}) {
  const db={old:'previous data',report:null}, log=[]; let draft;
@@ -44,24 +44,36 @@ test('locked reports, changed period and foreign family lines leave previous rep
 test('district can correct a transmitted report',async()=>{
  const p=database({status:'TRANSMIS'});assert.equal((await saveReport(p,{id:1,role:'ADMIN'},payload())).ok,true);
 });
-test('the server accepts the same signed adjustments and precision as the actual form',async()=>{
+test('the server and the actual form subtract losses, add adjustments and round to thousandths',async()=>{
  const page=fs.readFileSync(__dirname+'/index.html','utf8');
  const calculation=page.slice(page.indexOf('function calc(id)'),page.indexOf('\nfunction printCurrentReport',page.indexOf('function calc(id)')));
  for(const values of [
-  {stock_initial:10,quantite_recue:5,quantite_distribuee:3,pertes_ajustements:-2,stock_disponible:10},
-  {stock_initial:10,quantite_recue:5,quantite_distribuee:3,pertes_ajustements:2,stock_disponible:14},
-  {stock_initial:0.1,quantite_recue:0.2,quantite_distribuee:0,pertes_ajustements:0,stock_disponible:0.3},
-  {stock_initial:10,quantite_recue:5,quantite_distribuee:3,pertes_ajustements:2,stock_disponible:10}
+  {stock_initial:10,quantite_recue:5,quantite_distribuee:3,perte:3,ajustement:1,stock_disponible:10},
+  {stock_initial:10,quantite_recue:5,quantite_distribuee:3,perte:0,ajustement:2,stock_disponible:14},
+  {stock_initial:0.1,quantite_recue:0.2,quantite_distribuee:0,perte:0,ajustement:0,stock_disponible:0.3},
+  {stock_initial:10,quantite_recue:5,quantite_distribuee:3,perte:0,ajustement:2,stock_disponible:10}
  ]) {
   let rowError;
   const nodes={st_7:{innerText:values.stock_initial},rec_7:{value:values.quantite_recue},dist_7:{value:values.quantite_distribuee},
-   pert_7:{value:values.pertes_ajustements},disp_7:{value:values.stock_disponible},row_comm_7:{style:{}},row_7:{classList:{toggle:(_name,bad)=>rowError=bad}}};
+   pert_7:{value:values.perte},ajust_7:{value:values.ajustement},disp_7:{value:values.stock_disponible},
+   row_pert_7:{style:{}},row_ajust_7:{style:{}},row_7:{classList:{toggle:(_name,bad)=>rowError=bad}}};
   const ctx={document:{getElementById:id=>nodes[id]},updateIndicatorVisibility(){}};
   vm.createContext(ctx);vm.runInContext(calculation,ctx);ctx.calc(7);
-  const body=payload();Object.assign(body.stocks[0],values,{commentaire:values.pertes_ajustements?'Ajustement justifié':null});
+  const body=payload();Object.assign(body.stocks[0],values,{justification_perte:'Périmé',justification_ajustement:'Inventaire'});
   const p=database();
   if(rowError) {await assert.rejects(saveReport(p,actor,body),/Bilan de stock incorrect/);assert.equal(p.log.length,0);}
   else assert.equal((await saveReport(p,actor,body)).ok,true);
+ }
+});
+test('each nonzero movement requires its own reason, even when the movements cancel', async()=>{
+ for(const field of ['perte','ajustement']){
+  const p=database(),b=payload();
+  Object.assign(b.stocks[0],{perte:2,ajustement:2,justification_perte:'Périmé',justification_ajustement:'Inventaire'});
+  b.stocks[0]['justification_'+field]='   ';
+  await assert.rejects(saveReport(p,actor,b),/Justifiez/);
+  assert.equal(p.log.length,0);
+  b.stocks[0][field]=-1;
+  await assert.rejects(saveReport(p,actor,b),/positi/);
  }
 });
 test('duplicate and invalid lines cannot clear an old report',async()=>{
