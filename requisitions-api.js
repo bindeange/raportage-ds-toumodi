@@ -5,6 +5,7 @@ const endpoint = 'https://ci-web.msupply.org/graphql';
 const defaultStore = '51D5E6E0858F994EAC2EA2BA9CF50574';
 const schema = fs.readFileSync(path.join(__dirname, 'requisitions.sql'), 'utf8');
 const referenceSql = fs.readFileSync(path.join(__dirname, 'stock-reference.sql'), 'utf8');
+const comparisonSql = fs.readFileSync(path.join(__dirname, 'requisition-comparison.sql'), 'utf8');
 const loginQuery = `query ($username: String!, $password: String!) {
   authToken(username: $username, password: $password) {
     ... on AuthToken { token user { stores { nodes { id } } } }
@@ -13,7 +14,8 @@ const loginQuery = `query ($username: String!, $password: String!) {
 const listQuery = `query ($store: String!, $filter: RequisitionFilterInput, $page: PaginationInput) {
   requisitions(storeId: $store, filter: $filter, page: $page, sort: [{key: requisitionNumber, desc: false}]) {
     ... on RequisitionConnector { totalCount nodes {
-      id requisitionNumber createdDatetime type otherPartyName program { name }
+      id requisitionNumber createdDatetime sentDatetime status type otherPartyName program { name }
+      linkedRequisition { sentDatetime }
       otherParty(storeId: $store) { code }
       lines { totalCount nodes {
         id itemName item { code } initialStockOnHandUnits incomingUnits outgoingUnits lossInUnits additionInUnits
@@ -87,6 +89,8 @@ function requisitionRows(requisition, bounds) {
             requisition_id: requisition.id, line_id: line.id, created_at: date.toISOString(),
             requisition_number: requisition.requisitionNumber,
             client_code: requisition.otherParty?.code ?? null,
+            transmitted_at: requisition.linkedRequisition?.sentDatetime ?? requisition.sentDatetime ?? null,
+            requisition_status: requisition.status ?? null,
             fields: [requisition.otherPartyName, requisition.program?.name ?? '', line.item.code, line.itemName, ...numbers]
         };
     });
@@ -127,13 +131,16 @@ async function readRequisitions(username, password, bounds) {
 async function saveRows(client, rows, importedAt) {
     for (let i = 0; i < rows.length; i += 500) {
         await client.query(`INSERT INTO msupply_requisition_lines
-            (requisition_id, line_id, created_at, requisition_number, fields, imported_at, client_code)
-            SELECT requisition_id, line_id, created_at, requisition_number, fields, $2::timestamptz, client_code
-            FROM jsonb_to_recordset($1::jsonb) AS r(requisition_id text, line_id text, created_at timestamptz, requisition_number bigint, fields jsonb, client_code text)
+            (requisition_id, line_id, created_at, requisition_number, fields, imported_at, client_code, transmitted_at, requisition_status)
+            SELECT requisition_id, line_id, created_at, requisition_number, fields, $2::timestamptz, client_code, transmitted_at, requisition_status
+            FROM jsonb_to_recordset($1::jsonb) AS r(requisition_id text, line_id text, created_at timestamptz,
+                requisition_number bigint, fields jsonb, client_code text, transmitted_at timestamptz, requisition_status text)
             ON CONFLICT (requisition_id, line_id) DO UPDATE SET
                 created_at=EXCLUDED.created_at, requisition_number=EXCLUDED.requisition_number,
                 fields=EXCLUDED.fields, imported_at=EXCLUDED.imported_at,
-                client_code=COALESCE(EXCLUDED.client_code, msupply_requisition_lines.client_code)
+                client_code=COALESCE(EXCLUDED.client_code, msupply_requisition_lines.client_code),
+                transmitted_at=COALESCE(EXCLUDED.transmitted_at, msupply_requisition_lines.transmitted_at),
+                requisition_status=COALESCE(EXCLUDED.requisition_status, msupply_requisition_lines.requisition_status)
             WHERE msupply_requisition_lines.imported_at <= EXCLUDED.imported_at`,
         [JSON.stringify(rows.slice(i, i + 500)), importedAt]);
     }
@@ -172,9 +179,16 @@ function installRequisitions(app, pool) {
             medicament_id: row.medicament_id, requisition_number: row.requisition_number, values: row.fields.slice(4, 10)
         })) });
     }, false));
+    app.get('/api/requisitions/comparison', route(async (req, res) => {
+        const { start } = period(req.query.month);
+        const first = new Date(start);
+        first.setUTCMonth(first.getUTCMonth() - 5);
+        const { rows } = await pool.query(comparisonSql, [first.toISOString().slice(0, 10), start.slice(0, 10)]);
+        res.json({ ok: true, rows });
+    }));
     app.get('/api/requisitions', route(async (req, res) => {
         const { start, end } = period(req.query.month);
-        const { rows } = await pool.query(`SELECT requisition_id,line_id,created_at,requisition_number,fields,imported_at,client_code
+        const { rows } = await pool.query(`SELECT requisition_id,line_id,created_at,requisition_number,fields,imported_at,client_code,transmitted_at,requisition_status
             FROM msupply_requisition_lines WHERE created_at >= $1 AND created_at < $2
             ORDER BY created_at,requisition_number,line_id`, [start, end]);
         res.json({ ok: true, month: req.query.month, rows });
