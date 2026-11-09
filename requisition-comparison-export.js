@@ -59,24 +59,21 @@
         label(report.title, 12, 24, 13);
         label(kpi(report), 12, 33);
         label('Écart = SYGESS - mSupply. Le rapport est comparé aux réquisitions créées le mois suivant.', 12, 40);
-        const peak = Math.max(1, ...report.trend.flatMap(month => report.series.map(series => month[series.key])));
-        const step = Math.max(1, Math.ceil(peak / 4));
-        const x = i => 28 + i * 48;
-        const y = value => 126 - value * 72 / (step * 4);
-        for (let tick = 0; tick <= 4; tick++) {
-            const count = tick * step;
-            doc.setDrawColor('#dbe5ec');
-            doc.line(22, y(count), 276, y(count));
-            label(count, 12, y(count) + 1, 8);
-        }
+        label('De la transmission aux écarts · ' + report.monthLabel(report.month), 12, 53, 13);
+        const peak = Math.max(1, ...report.series.map(series => report.monthStats[series.key]));
         report.series.forEach((series, index) => {
-            doc.setDrawColor(series.color);
-            doc.setLineWidth(.6);
-            report.trend.slice(1).forEach((month, i) => doc.line(x(i), y(report.trend[i][series.key]), x(i + 1), y(month[series.key])));
-            doc.line(13 + index * 67, 148, 18 + index * 67, 148);
-            label(series.label, 20 + index * 67, 149, 8);
+            const y = 62 + index * 13;
+            const count = report.monthStats[series.key];
+            const width = count * 178 / peak;
+            label(series.label, 12, y + 5, 9);
+            doc.setFillColor('#e7eff4');
+            doc.rect(72, y, 178, 7, 'F');
+            if (count) {
+                doc.setFillColor(series.color);
+                doc.rect(72, y, Math.max(.7, width), 7, 'F');
+            }
+            label(count, 75 + width, y + 5, 9);
         });
-        report.trend.forEach((month, index) => label(report.monthLabel(month.month), x(index) - 8, 136, 8));
         doc.addPage();
         label('Compilation par structure', 12, 13, 14);
         grid(structureHeaders, structureRows(report.groups), 18);
@@ -116,13 +113,13 @@
         cover.addText(clean(kpi(report)), { x: .55, y: 1.65, w: 12, h: .7, fontSize: 21, bold: true, color: blue });
         cover.addText('Écart = SYGESS - mSupply\nLes réquisitions créées le mois suivant sont comparées au rapport du mois d’activité.',
             { x: .55, y: 2.55, w: 12, h: 1, fontSize: 15, color: '475F72' });
-        const trend = slide('De la transmission aux écarts', 'Nombre de lignes sur six mois');
-        trend.addChart(ppt.ChartType.line, report.series.map(series => ({
-            name: series.label, labels: report.trend.map(month => report.monthLabel(month.month)),
-            values: report.trend.map(month => month[series.key])
-        })), {
-            x: .65, y: 1.55, w: 11.9, h: 5.35, chartColors: report.series.map(series => series.color.slice(1)),
-            showLegend: true, legendPos: 'b', valAxisMinVal: 0, lineSize: 2
+        const comparison = slide('De la transmission aux écarts', report.monthLabel(report.month));
+        comparison.addChart(ppt.ChartType.bar, [{
+            name: 'Nombre de lignes', labels: report.series.map(series => series.label),
+            values: report.series.map(series => report.monthStats[series.key])
+        }], {
+            x: .65, y: 1.55, w: 11.9, h: 5.35, chartColors: ['147D82'],
+            barDir: 'bar', showLegend: false, showValue: true, valAxisMinVal: 0
         });
         const structures = structureRows(report.groups);
         for (let offset = 0; offset < structures.length; offset += 12) {

@@ -12,6 +12,7 @@
         { key: 'received', label: 'Lignes mSupply', color: '#147d82', includes: row => row.msupply?.length },
         { key: 'transmitted', label: 'Transmission datée', color: '#3959a1', includes: row => row.msupply?.some(source => source.sent) },
         { key: 'entered', label: 'Lignes saisies dans SYGESS', color: '#68559b', includes: row => row.physical?.length },
+        { key: 'comparable', label: 'Lignes comparables', color: '#28764d', includes: row => row.deltas !== null },
         { key: 'differences', label: 'Lignes en écart', color: '#b42318', includes: row => row.status === 'different' }
     ];
     const statuses = {
@@ -36,11 +37,6 @@
             status = deltas.some(value => value !== 0) ? 'different' : 'equal';
         }
         return { ...row, msupply, physical, status, deltas };
-    }
-
-    function periods(month) {
-        const end = new Date(month + '-01T00:00:00Z');
-        return Array.from({ length: 6 }, (_, i) => new Date(Date.UTC(end.getUTCFullYear(), end.getUTCMonth() + i - 5, 1)).toISOString().slice(0, 7));
     }
 
     function summarize(rows) {
@@ -86,50 +82,38 @@
         host.replaceChildren(wrapper);
     }
 
-    function chart(host, trend, choose) {
+    function chart(host, stats, month, choose) {
         const svg = (name, attrs) => {
             const element = document.createElementNS('http://www.w3.org/2000/svg', name);
             Object.entries(attrs).forEach(([key, value]) => element.setAttribute(key, value));
             return element;
         };
-        const plot = svg('svg', { viewBox: '0 0 720 260', role: 'group', 'aria-label': 'Courbes interactives sur six mois' });
-        const peak = Math.max(1, ...trend.flatMap(month => series.map(item => month[item.key])));
-        const step = Math.max(1, Math.ceil(peak / 4));
-        const x = i => 70 + i * 120;
-        const y = n => 205 - n * 170 / (step * 4);
-        const text = (label, xValue, yValue, anchor) => {
+        const plot = svg('svg', { viewBox: '0 0 720 224', role: 'group', 'aria-label': 'Graphique interactif · ' + monthLabel(month) });
+        const peak = Math.max(1, ...series.map(item => stats[item.key]));
+        const text = (group, label, xValue, yValue, anchor) => {
             const node = svg('text', { x: xValue, y: yValue, 'text-anchor': anchor, fill: '#4e6274', 'font-size': 12 });
             node.textContent = label;
-            plot.appendChild(node);
+            group.appendChild(node);
         };
-        for (let i = 0; i <= 4; i++) {
-            plot.appendChild(svg('line', { x1: 65, x2: 675, y1: y(i * step), y2: y(i * step), stroke: '#dbe5ec' }));
-            text(fmt.format(i * step), 56, y(i * step) + 4, 'end');
-        }
-        trend.forEach((month, i) => text(monthLabel(month.month), x(i), 234, 'middle'));
-        for (const [index, item] of series.entries()) {
-            const offset = (index - 1.5) * 10;
-            plot.appendChild(svg('polyline', {
-                points: trend.map((month, i) => `${x(i) + offset},${y(month[item.key])}`).join(' '),
-                stroke: item.color, fill: 'none', 'stroke-width': 2.5
-            }));
-            trend.forEach((month, i) => {
-                const count = month[item.key];
-                if (!count) return;
-                const point = svg('circle', {
-                    cx: x(i) + offset, cy: y(count), r: 5, fill: item.color, stroke: '#fff',
-                    tabindex: 0, role: 'button', 'aria-label': `${monthLabel(month.month)}, ${item.label} : ${count}`
-                });
-                const tip = svg('title', {});
-                tip.textContent = `${item.label} · ${count}`;
-                point.appendChild(tip);
-                point.addEventListener('click', () => choose(month.month, item));
-                point.addEventListener('keydown', event => {
-                    if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); choose(month.month, item); }
-                });
-                plot.appendChild(point);
+        series.forEach((item, index) => {
+            const count = stats[item.key];
+            const y = 14 + index * 42;
+            const width = count * 410 / peak;
+            const bar = svg('g', {
+                role: 'button', tabindex: 0, 'aria-label': `${monthLabel(month)}, ${item.label} : ${count}`
             });
-        }
+            const tip = svg('title', {});
+            tip.textContent = `${item.label} · ${count}`;
+            bar.append(tip, svg('rect', { x: 206, y, width: 410, height: 25, rx: 4, fill: '#e7eff4' }));
+            if (count) bar.appendChild(svg('rect', { x: 206, y, width: Math.max(2, width), height: 25, rx: 4, fill: item.color }));
+            text(bar, item.label, 195, y + 17, 'end');
+            text(bar, fmt.format(count), 216 + width, y + 17, 'start');
+            bar.addEventListener('click', () => choose(item));
+            bar.addEventListener('keydown', event => {
+                if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); choose(item); }
+            });
+            plot.appendChild(bar);
+        });
         host.replaceChildren(plot);
     }
 
@@ -146,9 +130,8 @@
         <div class="rc-kpis" data-rc="kpis"></div>
         <section class="rc-panel">
             <h3>De la transmission aux écarts</h3>
-            <div class="rc-legend" data-rc="legend"></div>
             <div class="rc-chart" data-rc="chart"></div>
-            <p class="rc-caption">Cliquez sur un point ou sur une valeur dans le tableau par mois pour ouvrir les sources.</p>
+            <p class="rc-caption">Cliquez sur une barre ou un chiffre pour ouvrir les sources du mois sélectionné.</p>
             <div data-rc="timeline"></div>
         </section>
         <section class="rc-panel"><h3>Comparaison par structure</h3><div data-rc="structures"></div></section>
@@ -171,16 +154,9 @@
         root.innerHTML = markup;
         const el = name => root.querySelector('[data-rc="' + name + '"]');
         const month = el('month');
-        el('legend').replaceChildren(...series.map(item => {
-            const label = document.createElement('span');
-            const marker = document.createElement('i');
-            marker.style.background = item.color;
-            label.append(marker, document.createTextNode(item.label));
-            return label;
-        }));
         let rows = [];
         let chosen;
-        let trend;
+        let monthStats;
         let view = 'differences';
         let page = 0;
         let generation = 0;
@@ -266,7 +242,7 @@
                 (!el('programme').value || programmeKey(row) === el('programme').value) &&
                 searchKey([row.item, row.code, ...row.msupply.map(source => source.code)].join(' ')).includes(search));
             const current = visible.filter(row => row.month === month.value);
-            const stats = summarize(current);
+            const stats = monthStats = summarize(current);
             const rate = stats.comparable ? fmt.format(100 * stats.differences / stats.comparable) + ' %' : '—';
             el('kpis').replaceChildren(...[
                 ['Transmission datée', stats.transmitted], ['Lignes comparables', stats.comparable],
@@ -278,16 +254,13 @@
                 card.append(amount, document.createTextNode(label));
                 return card;
             }));
-            const choose = (period, item) => showDetails(`${item.label} · ${monthLabel(period)}`,
-                visible.filter(row => row.month === period && item.includes(row)),
-                item.key === 'entered' ? 'physical' : item.key === 'differences' ? 'differences' : 'msupply', true);
-            trend = periods(month.value).map(period => ({ month: period, ...summarize(visible.filter(row => row.month === period)) }));
-            chart(el('chart'), trend, choose);
-            buttonGrid(el('timeline'), ['Mois', ...series.map(item => item.label)], trend.map(period => [
-                monthLabel(period.month), ...series.map(item => ({
-                    label: String(period[item.key]), disabled: period[item.key] === 0, click: () => choose(period.month, item)
-                }))
-            ]));
+            const choose = item => showDetails(`${item.label} · ${monthLabel(month.value)}`,
+                current.filter(item.includes),
+                item.key === 'entered' ? 'physical' : ['comparable', 'differences'].includes(item.key) ? 'differences' : 'msupply', true);
+            chart(el('chart'), stats, month.value, choose);
+            buttonGrid(el('timeline'), ['Mois', ...series.map(item => item.label)], [[
+                monthLabel(month.value), ...series.map(item => ({ label: String(stats[item.key]), click: () => choose(item) }))
+            ]]);
             const groups = groupStructures(current);
             buttonGrid(el('structures'), ['Structure', 'Comparables', 'En écart', 'Non comparables'], groups.map(group => [
                 { label: group.label, click: () => showDetails(`${group.label} · ${monthLabel(month.value)}`, group.rows, 'differences', true) },
@@ -329,7 +302,7 @@
             el('pdf').disabled = el('ppt').disabled = true;
             try {
                 await window.downloadRequisitionComparison(format, {
-                    title: chosen.title, rows: chosen.rows, trend, groups: groupStructures(chosen.rows), fields, series, statuses, summarize,
+                    title: chosen.title, rows: chosen.rows, monthStats, groups: groupStructures(chosen.rows), fields, series, statuses, summarize,
                     monthLabel, dateLabel, deltaLabel, valueLabel, month: month.value, assets: options.assets
                 });
             } catch (error) {
