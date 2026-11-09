@@ -37,6 +37,13 @@ function period(month) {
     return { start, end };
 }
 
+function activityRequisitionPeriod(month) {
+    const start = period(month).end;
+    const end = new Date(start);
+    end.setUTCMonth(end.getUTCMonth() + 1);
+    return { start, end: end.toISOString() };
+}
+
 async function graphql(query, variables, token, signal) {
     const headers = { 'Content-Type': 'application/json' };
     if (token) headers.Authorization = `Bearer ${token}`;
@@ -148,7 +155,7 @@ function installRequisitions(app, pool) {
         }
     };
     app.get('/api/clinical/requisition-stock', route(async (req, res) => {
-        const { start, end } = period(req.query.month);
+        const { start, end } = activityRequisitionPeriod(req.query.month);
         const structure = Number(req.query.structure);
         const programme = Number(req.query.programme);
         if (![structure, programme].every(n => Number.isInteger(n) && n > 0 && n <= 2147483647)) {
