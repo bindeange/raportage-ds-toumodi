@@ -4,6 +4,7 @@ const path = require('node:path');
 const endpoint = 'https://ci-web.msupply.org/graphql';
 const defaultStore = '51D5E6E0858F994EAC2EA2BA9CF50574';
 const schema = fs.readFileSync(path.join(__dirname, 'requisitions.sql'), 'utf8');
+const referenceSql = fs.readFileSync(path.join(__dirname, 'stock-reference.sql'), 'utf8');
 const loginQuery = `query ($username: String!, $password: String!) {
   authToken(username: $username, password: $password) {
     ... on AuthToken { token user { stores { nodes { id } } } }
@@ -13,6 +14,7 @@ const listQuery = `query ($store: String!, $filter: RequisitionFilterInput, $pag
   requisitions(storeId: $store, filter: $filter, page: $page, sort: [{key: requisitionNumber, desc: false}]) {
     ... on RequisitionConnector { totalCount nodes {
       id requisitionNumber createdDatetime type otherPartyName program { name }
+      otherParty(storeId: $store) { code }
       lines { totalCount nodes {
         id itemName item { code } initialStockOnHandUnits incomingUnits outgoingUnits lossInUnits additionInUnits
         averageMonthlyConsumption requestedQuantity alreadyIssued remainingQuantityToSupply
@@ -77,6 +79,7 @@ function requisitionRows(requisition, bounds) {
         return {
             requisition_id: requisition.id, line_id: line.id, created_at: date.toISOString(),
             requisition_number: requisition.requisitionNumber,
+            client_code: requisition.otherParty?.code ?? null,
             fields: [requisition.otherPartyName, requisition.program?.name ?? '', line.item.code, line.itemName, ...numbers]
         };
     });
@@ -117,12 +120,13 @@ async function readRequisitions(username, password, bounds) {
 async function saveRows(client, rows, importedAt) {
     for (let i = 0; i < rows.length; i += 500) {
         await client.query(`INSERT INTO msupply_requisition_lines
-            (requisition_id, line_id, created_at, requisition_number, fields, imported_at)
-            SELECT requisition_id, line_id, created_at, requisition_number, fields, $2::timestamptz
-            FROM jsonb_to_recordset($1::jsonb) AS r(requisition_id text, line_id text, created_at timestamptz, requisition_number bigint, fields jsonb)
+            (requisition_id, line_id, created_at, requisition_number, fields, imported_at, client_code)
+            SELECT requisition_id, line_id, created_at, requisition_number, fields, $2::timestamptz, client_code
+            FROM jsonb_to_recordset($1::jsonb) AS r(requisition_id text, line_id text, created_at timestamptz, requisition_number bigint, fields jsonb, client_code text)
             ON CONFLICT (requisition_id, line_id) DO UPDATE SET
                 created_at=EXCLUDED.created_at, requisition_number=EXCLUDED.requisition_number,
-                fields=EXCLUDED.fields, imported_at=EXCLUDED.imported_at
+                fields=EXCLUDED.fields, imported_at=EXCLUDED.imported_at,
+                client_code=COALESCE(EXCLUDED.client_code, msupply_requisition_lines.client_code)
             WHERE msupply_requisition_lines.imported_at <= EXCLUDED.imported_at`,
         [JSON.stringify(rows.slice(i, i + 500)), importedAt]);
     }
@@ -130,9 +134,10 @@ async function saveRows(client, rows, importedAt) {
 
 function installRequisitions(app, pool) {
     let ready;
-    const adminRoute = handler => async (req, res) => {
+    const route = (handler, adminOnly = true) => async (req, res) => {
         res.set('Cache-Control', 'no-store');
-        if (req.clinicalActor?.role !== 'ADMIN') return res.status(403).json({ ok: false, error: 'Accès réservé au district.' });
+        const role = req.clinicalActor?.role;
+        if (role !== 'ADMIN' && (adminOnly || role !== 'USER')) return res.status(403).json({ ok: false, error: 'Accès refusé.' });
         try {
             ready ??= pool.query(schema).catch(err => { ready = null; throw err; });
             await ready;
@@ -142,14 +147,32 @@ function installRequisitions(app, pool) {
             res.status(err.status || 500).json({ ok: false, error: err.status ? err.message : 'La base des réquisitions est indisponible.' });
         }
     };
-    app.get('/api/requisitions', adminRoute(async (req, res) => {
+    app.get('/api/clinical/requisition-stock', route(async (req, res) => {
         const { start, end } = period(req.query.month);
-        const { rows } = await pool.query(`SELECT requisition_id,line_id,created_at,requisition_number,fields,imported_at
+        const structure = Number(req.query.structure);
+        const programme = Number(req.query.programme);
+        if (![structure, programme].every(n => Number.isInteger(n) && n > 0 && n <= 2147483647)) {
+            throw error('Structure ou programme invalide.');
+        }
+        const actor = req.clinicalActor;
+        if (actor.role !== 'ADMIN' && Number(actor.id) !== structure) {
+            const linked = await pool.query(`SELECT 1 FROM agents_asc a JOIN entites e ON e.code_structure=a.code_asc
+                WHERE a.code_espc=$1 AND e.id=$2`, [actor.code_structure, structure]);
+            if (!linked.rowCount) throw error('Accès limité à votre structure.', 403);
+        }
+        const { rows } = await pool.query(referenceSql, [structure, programme, start, end]);
+        res.json({ ok: true, rows: rows.map(row => ({
+            medicament_id: row.medicament_id, requisition_number: row.requisition_number, values: row.fields.slice(4, 10)
+        })) });
+    }, false));
+    app.get('/api/requisitions', route(async (req, res) => {
+        const { start, end } = period(req.query.month);
+        const { rows } = await pool.query(`SELECT requisition_id,line_id,created_at,requisition_number,fields,imported_at,client_code
             FROM msupply_requisition_lines WHERE created_at >= $1 AND created_at < $2
             ORDER BY created_at,requisition_number,line_id`, [start, end]);
         res.json({ ok: true, month: req.query.month, rows });
     }));
-    app.post('/api/requisitions/import', adminRoute(async (req, res) => {
+    app.post('/api/requisitions/import', route(async (req, res) => {
         const { month, username, password } = req.body || {};
         const bounds = period(month);
         if (typeof username !== 'string' || !username.trim() || username.length > 200 ||

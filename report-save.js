@@ -59,14 +59,14 @@ async function saveReportOnce(pool, actor, body) {
             if (number(row[k], k) < 0) throw fail('Les quantités de stock doivent être positives ou nulles.');
         }
         if (number(row.perte, 'Perte') < 0) throw fail('La perte doit être positive ou nulle.');
-        if (number(row.ajustement, 'Ajustement') < 0) throw fail('L’ajustement doit être positif ou nul.');
+        if (number(row.ajustement, 'Ajout') < 0) throw fail('L’ajout doit être positif ou nul.');
         const expected = row.stock_initial + row.quantite_recue - row.quantite_distribuee - row.perte + row.ajustement;
         if (Math.round(expected * 1000) !== Math.round(row.stock_disponible * 1000)) {
             throw fail('Bilan de stock incorrect pour le médicament ' + row.medicament_id
                 + ' : disponible attendu ' + Number(expected.toFixed(3)) + ', saisi ' + row.stock_disponible
-                + '. Règle : initial + reçu - distribué - perte + ajustement.');
+                + '. Règle : initial + reçu - distribué - perte + ajout.');
         }
-        for (const [quantity, label] of [['perte', 'la perte'], ['ajustement', 'l’ajustement']]) {
+        for (const [quantity, label] of [['perte', 'la perte'], ['ajustement', 'l’ajout']]) {
             const reason = row['justification_' + quantity];
             if (reason != null && (typeof reason !== 'string' || reason.length > 10000)) throw fail('Justification invalide.');
             if (row[quantity] !== 0 && !reason?.trim()) throw fail('Justifiez ' + label + ' pour le médicament ' + row.medicament_id + '.');

@@ -14,7 +14,7 @@ function context(responses, {fail=false, admin=true}={}) {
         user:{id:2,nom_entite:'ESPC',code_structure:'A'},districtSelectedEntite:null,currentM:11,currentA:2026,
         isDistrict:()=>admin,isLockedReportStatus:s=>['TRANSMIS','Validé'].includes(s),
         getPreviousPeriod:()=>({mois:10,annee:2026}),loader:v=>loaders.push(v),alert:s=>alerts.push(s),
-        isIndicatorLinked:()=>false,updateIndicatorVisibility(){},
+        isIndicatorLinked:()=>false,updateIndicatorVisibility(){},showRequisitionReferences(){},
         neonQuery:async(sql,params,options)=>{requests.push({sql,params,options});if(fail)throw Error('lecture refusée');return responses[count++];}
     };
     vm.createContext(ctx);vm.runInContext(source('function htmlEscape(', '\nfunction '),ctx);vm.runInContext(loading,ctx);
