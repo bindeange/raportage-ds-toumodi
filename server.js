@@ -49,7 +49,16 @@ app.use(['/api/sync', '/api/clinical/sync', '/api/clinical/import'], express.jso
 app.use(express.json({ limit: '1mb' }));
 app.get('/', (_req,res)=>res.sendFile(path.join(__dirname,'index.html')));
 app.get('/index.html', (_req,res)=>res.sendFile(path.join(__dirname,'index.html')));
-for(const asset of ['clinical-ui.js','clinical-fields.js','dashboard.js','portal.css','dispensation_summary.js','requisitions-ui.js','requisitions-filters.js'])app.get('/'+asset,(_req,res)=>res.sendFile(path.join(__dirname,asset)));
+for(const asset of ['clinical-ui.js','clinical-fields.js','dashboard.js','portal.css','dispensation_summary.js','requisitions-ui.js','requisitions-filters.js',
+    'requisition-comparison.js','requisition-comparison-export.js','requisition-comparison.css'])app.get('/'+asset,(_req,res)=>res.sendFile(path.join(__dirname,asset)));
+const exportAssets = {
+    'requisition-pdf.js': ['jspdf', 'jspdf.umd.min.js'],
+    'requisition-pdf-table.js': ['jspdf-autotable', 'jspdf.plugin.autotable.min.js'],
+    'requisition-ppt.js': ['pptxgenjs', 'pptxgen.bundle.js']
+};
+for (const [asset, [moduleName, filename]] of Object.entries(exportAssets)) {
+    app.get('/' + asset, (_req, res) => res.sendFile(path.join(path.dirname(require.resolve(moduleName)), filename)));
+}
 
 app.use((req, _res, next) => {
     if (req.path.startsWith('/api/')) {

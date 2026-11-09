@@ -199,6 +199,7 @@
                 <button id="district-tab-bilan" onclick="showDistrictBilanView()">Bilan</button>
                 <button id="district-tab-livraisons" onclick="showDistrictLivraisonsView()">Livraisons</button>
                 <button id="district-tab-requisitions" onclick="showDistrictRequisitions()">Réquisitions</button>
+                <button id="district-tab-requisition-comparison" onclick="showDistrictRequisitionComparison()">Écarts mSupply</button>
                 <button id="district-tab-period" onclick="showPeriodManager()">Periode</button>
                 <button id="district-tab-passwords" onclick="showPasswordManager()">Mots de passe</button>
             </div>
@@ -221,6 +222,7 @@
                 </div>
             </div>
 
+            <div id="district-requisition-comparison-view" class="no-disp"></div>
             <div id="district-dashboard-view">
                 <div class="district-filters">
                     <label><b>PERIODE :</b><select id="dashboard-period" onchange="loadDistrictDashboard()"></select></label>
@@ -419,6 +421,9 @@
 <script src="/clinical-ui.js?v=20260920"></script>
 <script src="/requisitions-filters.js?v=1"></script>
 <script src="/requisitions-ui.js?v=filtres"></script>
+<link rel="stylesheet" href="/requisition-comparison.css">
+<script src="/requisition-comparison-export.js"></script>
+<script src="/requisition-comparison.js"></script>
 <script src="/dashboard.js?v=20260920"></script>
 <script>
 const API_URL = "/api/query";
@@ -788,6 +793,7 @@ function setDistrictTab(tab) {
     document.getElementById('district-tab-bilan').classList.toggle('active', tab === 'bilan');
     document.getElementById('district-tab-livraisons').classList.toggle('active', tab === 'livraisons');
     document.getElementById('district-tab-requisitions').classList.toggle('active', tab === 'requisitions');
+    document.getElementById('district-tab-requisition-comparison').classList.toggle('active', tab === 'requisition-comparison');
     document.getElementById('district-tab-period').classList.toggle('active', tab === 'period');
     document.getElementById('district-tab-passwords').classList.toggle('active', tab === 'passwords');
     document.getElementById('district-dashboard-view').classList.toggle('no-disp', tab !== 'dashboard');
@@ -795,8 +801,28 @@ function setDistrictTab(tab) {
     document.getElementById('district-bilan-view').classList.toggle('no-disp', tab !== 'bilan');
     document.getElementById('district-livraisons-view').classList.toggle('no-disp', tab !== 'livraisons');
     document.getElementById('district-requisitions-view').classList.toggle('no-disp', tab !== 'requisitions');
+    document.getElementById('district-requisition-comparison-view').classList.toggle('no-disp', tab !== 'requisition-comparison');
     document.getElementById('district-period-view').classList.toggle('no-disp', tab !== 'period');
     document.getElementById('district-passwords-view').classList.toggle('no-disp', tab !== 'passwords');
+}
+
+let reloadRequisitionComparison;
+function showDistrictRequisitionComparison() {
+    if (!isDistrict()) return;
+    setDistrictTab('requisition-comparison');
+    if (reloadRequisitionComparison) return reloadRequisitionComparison();
+    reloadRequisitionComparison = window.mountRequisitionComparison(document.getElementById('district-requisition-comparison-view'), {
+        month: `${currentA}-${String(currentM).padStart(2, '0')}`,
+        assets: { pdf: '/requisition-pdf.js', table: '/requisition-pdf-table.js', ppt: '/requisition-ppt.js' },
+        async load(month) {
+            const response = await fetch('/api/requisitions/comparison?month=' + encodeURIComponent(month), {
+                headers: { Authorization: 'Bearer ' + window.clinicalToken }, signal: AbortSignal.timeout(20000)
+            });
+            const result = await response.json();
+            if (!response.ok || !result.ok) throw new Error(result.error || 'Comparaison indisponible.');
+            return result.rows;
+        }
+    });
 }
 
 async function showPeriodManager() {
