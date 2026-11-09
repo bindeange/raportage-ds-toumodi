@@ -31,7 +31,7 @@ WITH bounds AS (
            jsonb_build_object('number',r.requisition_number::text,'id',r.requisition_id,'created',r.created_at,
                'sent',r.transmitted_at,'status',r.requisition_status,'client',r.fields->>0,
                'code',r.fields->>2,'name',r.fields->>3,'programme',r.fields->>1,
-               'values',jsonb_build_array(r.fields->4,r.fields->5,r.fields->6,r.fields->7,r.fields->8,r.fields->9)) AS source
+               'values',jsonb_build_array(r.fields->4,r.fields->5,r.fields->6,r.fields->9)) AS source
     FROM requisitions r
     CROSS JOIN LATERAL (SELECT count(*) n, min(id) id FROM structures WHERE code <> '' AND code=r.client_code) sc
     CROSS JOIN LATERAL (SELECT count(*) n, min(id) id FROM structures WHERE sc.n=0 AND nom <> '' AND nom=r.client_name) sn
@@ -49,7 +49,7 @@ WITH bounds AS (
     SELECT to_char(make_date(r.annee,r.mois,1),'YYYY-MM') AS month,
            r.entite_id AS structure_id, d.medicament_id AS item_id,
            jsonb_agg(jsonb_build_object('id',r.id,'date',r.date_soumission,'status',r.statut,'values',
-               jsonb_build_array(d.stock_initial,d.quantite_recue,d.quantite_distribuee,d.perte,d.ajustement,d.stock_disponible))
+               jsonb_build_array(d.stock_initial,d.quantite_recue,d.quantite_distribuee,d.stock_disponible))
                ORDER BY r.date_soumission DESC NULLS LAST,r.id) AS physical
     FROM rapports r JOIN rapport_stock_details d ON d.rapport_id=r.id
     JOIN structures s ON s.id=r.entite_id CROSS JOIN bounds b
