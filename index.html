@@ -1797,7 +1797,10 @@ async function reopenReport(rapportId) {
 
 // 4. Formulaire de saisie
 async function showRequisitionReferences(meds, structure, programme, year, month) {
-    const targets = new Map(meds.map(m => [Number(m.id), [...document.querySelectorAll(`#row_${m.id} [data-msupply]`)]]));
+    const targets = new Map(meds.map(m => [Number(m.id), {
+        codes: document.getElementById('requisition-codes_' + m.id),
+        cells: [...document.querySelectorAll(`#row_${m.id} [data-msupply]`)]
+    }]));
     const query = new URLSearchParams({ structure, programme, month: `${year}-${String(month).padStart(2, '0')}` });
     try {
         const response = await fetch('/api/clinical/requisition-stock?' + query, {
@@ -1806,13 +1809,23 @@ async function showRequisitionReferences(meds, structure, programme, year, month
         if (!response.ok) return;
         const { rows } = await response.json();
         for (const reference of rows) {
-            const cells = targets.get(Number(reference.medicament_id));
-            if (!cells?.[0]?.isConnected) continue;
+            const target = targets.get(Number(reference.medicament_id));
+            if (!target?.codes?.isConnected) continue;
+            const { codes, cells } = target;
+            if (!reference.values.some(value => typeof value === 'number' && value !== 0)) continue;
+            const number = String(reference.requisition_number);
+            if (![...codes.children].some(code => code.textContent === number)) {
+                const code = document.createElement('small');
+                code.style.cssText = 'display:block;color:#b42318;font-weight:600';
+                code.textContent = number;
+                codes.appendChild(code);
+            }
             reference.values.forEach((value, index) => {
                 if (typeof value !== 'number' || value === 0 || !cells[index]) return;
                 const note = document.createElement('small');
                 note.style.cssText = 'display:block;color:#b42318;font-weight:600';
-                note.textContent = `mSupply n°${reference.requisition_number} · ${new Intl.NumberFormat('fr-FR').format(value)}`;
+                note.textContent = new Intl.NumberFormat('fr-FR').format(value);
+                note.title = 'Réquisition ' + number;
                 cells[index].appendChild(note);
                 const row = cells[index].closest('tr');
                 if (row.style.display === 'none') {
@@ -2036,7 +2049,7 @@ async function startSaisie(fId, fNom, readOnly = false, targetPeriod = null) {
                 : '';
             if (!visible) hiddenMeds.push(m);
             return `<tr id="row_${m.id}" style="${visible ? '' : 'display:none;'}">
-                <td align="left"><b>${m.dci}</b><br><small style="color:#7f8c8d;">${m.unite_comptage}</small></td>
+                <td align="left"><b>${m.dci}</b><span id="requisition-codes_${m.id}"></span><br><small style="color:#7f8c8d;">${m.unite_comptage}</small></td>
                 <td class="st-init"><span id="st_${m.id}">${init}</span><span data-msupply></span></td>
                 <td>
                     <input type="number" class="input-saisie" id="rec_${m.id}" value="${livre}" min="0" oninput="calc(${m.id})">
