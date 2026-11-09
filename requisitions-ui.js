@@ -11,6 +11,7 @@
         cell.textContent = label;
         header.appendChild(cell);
     }
+    const refreshFilters = window.attachRequisitionFilters(element('head').closest('table'), element('filter-controls'));
 
     async function request(path, data) {
         const options = { headers: { Authorization: `Bearer ${window.clinicalToken}` } };
@@ -36,6 +37,7 @@
             fragment.appendChild(tr);
         }
         element('body').replaceChildren(fragment);
+        refreshFilters();
         return rows.length;
     }
 
@@ -48,6 +50,7 @@
         buttons.forEach(button => { button.disabled = true; });
         element('month').disabled = true;
         element('body').replaceChildren();
+        refreshFilters();
         const status = element('status');
         status.textContent = importRequested ? 'Lecture des réquisitions dans mSupply…' : 'Chargement des réquisitions…';
         let imported;
