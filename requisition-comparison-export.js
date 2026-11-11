@@ -17,11 +17,15 @@
     const title = 'Rapport des écarts mSupply';
     const clean = value => String(value ?? '—').replace(/[\u202f\u00a0]/g, ' ').replace(/−/g, '-');
     const filename = report => 'Ecarts-mSupply-' + (report.rows[0]?.month || report.month);
-    const structureHeaders = ['Structure', 'Comparables', 'En écart', 'Non comparables'];
+    const totalHeaders = ['Indicateur', 'Total mSupply', 'Total SYGESS', 'Écart SYGESS − mSupply'];
     const gapHeaders = ['Structure', 'Médicament / code', 'Champ / résultat', 'SYGESS', 'mSupply', 'Écart', 'Réquisition', 'Transmission'];
 
-    function structureRows(groups) {
-        return groups.map(group => [group.label, group.comparable, group.differences, group.unresolved]);
+    function totalRows(report) {
+        return report.fields.map((field, index) => {
+            const total = report.monthStats.totals[index];
+            return [field, report.valueLabel(total.msupply), report.valueLabel(total.sygess),
+                total.gap == null ? '—' : report.deltaLabel(total.gap)];
+        });
     }
 
     function gapRows(report) {
@@ -37,9 +41,8 @@
     }
 
     function kpi(report) {
-        const s = report.summarize(report.rows);
-        const rate = s.comparable ? (100 * s.differences / s.comparable).toFixed(1).replace('.', ',') + ' %' : '—';
-        return `${s.transmitted} ligne(s) avec date de transmission · ${s.comparable} comparable(s) · ${s.differences} en écart (${rate}) · ${s.unresolved} non comparable(s)`;
+        const s = report.monthStats;
+        return `${s.msupplyCodes} codes mSupply · ${s.sygessCodes} codes SYGESS · ${s.matched} codes communs · Correspondance ${report.percentage(s.coverage)}`;
     }
 
     async function pdf(report) {
@@ -59,10 +62,12 @@
         label(report.title, 12, 24, 13);
         label(kpi(report), 12, 33);
         label('Écart = SYGESS - mSupply. Le rapport est comparé aux réquisitions créées le mois suivant.', 12, 40);
-        label('De la transmission aux écarts · ' + report.monthLabel(report.month), 12, 53, 13);
+        label('Totaux sur les médicaments concordants', 12, 53, 13);
+        grid(totalHeaders, totalRows(report), 57);
+        label('De la transmission aux écarts · ' + report.monthLabel(report.month), 12, 106, 13);
         const peak = Math.max(1, ...report.series.map(series => report.monthStats[series.key]));
         report.series.forEach((series, index) => {
-            const y = 62 + index * 13;
+            const y = 112 + index * 13;
             const count = report.monthStats[series.key];
             const width = count * 178 / peak;
             label(series.label, 12, y + 5, 9);
@@ -75,12 +80,13 @@
             label(count, 75 + width, y + 5, 9);
         });
         doc.addPage();
-        label('Compilation par structure', 12, 13, 14);
-        grid(structureHeaders, structureRows(report.groups), 18);
+        label('Classement des structures · ' + report.ranking.title, 12, 13, 14);
+        grid(report.ranking.headers, report.ranking.lines, 18);
         doc.addPage();
         label('Détail des écarts et des lignes non comparables', 12, 13, 14);
+        label(report.detailTitle, 12, 20);
         const details = gapRows(report);
-        if (details.length) grid(gapHeaders, details, 18);
+        if (details.length) grid(gapHeaders, details, 25);
         else label('Aucun écart ni ligne non comparable dans cette sélection.', 12, 24);
         for (let page = 1; page <= doc.getNumberOfPages(); page++) {
             doc.setPage(page);
@@ -113,6 +119,7 @@
         cover.addText(clean(kpi(report)), { x: .55, y: 1.65, w: 12, h: .7, fontSize: 21, bold: true, color: blue });
         cover.addText('Écart = SYGESS - mSupply\nLes réquisitions créées le mois suivant sont comparées au rapport du mois d’activité.',
             { x: .55, y: 2.55, w: 12, h: 1, fontSize: 15, color: '475F72' });
+        grid(slide('Totaux sur les médicaments concordants', report.title), totalHeaders, totalRows(report), [4.3, 2.4, 2.4, 3.05]);
         const comparison = slide('De la transmission aux écarts', report.monthLabel(report.month));
         comparison.addChart(ppt.ChartType.bar, [{
             name: 'Nombre de lignes', labels: report.series.map(series => series.label),
@@ -121,10 +128,10 @@
             x: .65, y: 1.55, w: 11.9, h: 5.35, chartColors: ['147D82'],
             barDir: 'bar', showLegend: false, showValue: true, valAxisMinVal: 0
         });
-        const structures = structureRows(report.groups);
+        const structures = report.ranking.lines;
         for (let offset = 0; offset < structures.length; offset += 12) {
-            const page = slide('Compilation par structure', `${offset + 1}–${Math.min(offset + 12, structures.length)} sur ${structures.length} structures`);
-            grid(page, structureHeaders, structures.slice(offset, offset + 12), [6.7, 1.8, 1.7, 1.95]);
+            const page = slide('Classement des structures', report.ranking.title);
+            grid(page, report.ranking.headers, structures.slice(offset, offset + 12), [.7, 4.15, 1.65, 1.7, 1.75, 2.2]);
         }
         const details = gapRows(report);
         for (let offset = 0; offset < Math.min(details.length, 24); offset += 8) {
