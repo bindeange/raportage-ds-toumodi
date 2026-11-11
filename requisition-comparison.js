@@ -40,12 +40,30 @@
     }
 
     function summarize(rows) {
-        const comparable = rows.filter(row => row.deltas).length;
+        const paired = rows.filter(row => !row.mapping_issue && row.msupply.length && row.physical.length);
+        const comparable = paired.filter(row => row.deltas);
+        const unmappedCodes = new Set(rows.filter(row => row.mapping_issue && row.msupply.length)
+            .map(row => JSON.stringify([row.structure_id ?? searchKey(row.structure), searchKey(row.code).trim() || row.msupply[0].id])));
+        const msupplyCodes = rows.filter(row => !row.mapping_issue && row.msupply.length).length + unmappedCodes.size;
+        const sygessCodes = rows.filter(row => row.physical.length).length;
         return {
-            total: rows.length, comparable, unresolved: rows.length - comparable,
+            total: rows.length, unresolved: rows.length - comparable.length,
+            msupplyCodes, sygessCodes, matched: paired.length,
+            coverage: msupplyCodes ? paired.length / msupplyCodes : null,
+            totals: fields.map((_, index) => {
+                if (!comparable.length) return { msupply: null, sygess: null, gap: null };
+                const msupply = comparable.reduce((sum, row) => sum + Math.round(row.msupply[0].values[index] * 1000), 0);
+                const sygess = comparable.reduce((sum, row) => sum + Math.round(row.physical[0].values[index] * 1000), 0);
+                return { msupply: msupply / 1000, sygess: sygess / 1000, gap: (sygess - msupply) / 1000 };
+            }),
             ...Object.fromEntries(series.map(item => [item.key, rows.filter(item.includes).length]))
         };
     }
+
+    const percentage = ratio => ratio == null ? '—' : fmt.format(ratio * 100) + ' %';
+    const rankScore = (group, metric) => metric === 'coverage'
+        ? group.coverage == null ? null : 1 - group.coverage
+        : group.totals[Number(metric)].gap == null ? null : Math.abs(group.totals[Number(metric)].gap);
 
     function groupStructures(rows) {
         const groups = new Map();
@@ -122,19 +140,35 @@
         <p>Contrôle de cohérence entre les valeurs rapportées dans mSupply et celles recueillies dans SYGESS. Les réquisitions sont créées le mois suivant. Écart = SYGESS − mSupply.</p>
         <div class="rc-filters">
             <label>Mois d’activité <input data-rc="month" type="month" required></label>
-            <label>Structure <select data-rc="structure"><option value="">Toutes</option></select></label>
+            <label>Structure ou district <select data-rc="structure"><option value="">District · Compilation</option></select></label>
             <label>Programme <select data-rc="programme"><option value="">Tous</option></select></label>
             <label>Médicament ou code <input data-rc="item" type="search"></label>
         </div>
         <p data-rc="status" role="status"></p>
+        <h3 data-rc="scope"></h3>
+        <h3>Correspondance des codes médicaments</h3>
+        <p>Le taux rapporte les codes présents dans les deux sources aux codes rapportés dans mSupply, par structure.</p>
         <div class="rc-kpis" data-rc="kpis"></div>
+        <section class="rc-panel">
+            <h3>Totaux sur les médicaments concordants</h3>
+            <p>Les totaux utilisent les lignes appariées une à une avec quatre valeurs renseignées. Écart = SYGESS − mSupply.</p>
+            <div data-rc="totals"></div>
+        </section>
         <section class="rc-panel">
             <h3>De la transmission aux écarts</h3>
             <div class="rc-chart" data-rc="chart"></div>
             <p class="rc-caption">Cliquez sur une barre ou un chiffre pour ouvrir les sources du mois sélectionné.</p>
             <div data-rc="timeline"></div>
         </section>
-        <section class="rc-panel"><h3>Comparaison par structure</h3><div data-rc="structures"></div></section>
+        <section class="rc-panel">
+            <h3>Classement des structures</h3>
+            <label>Indicateur du classement <select data-rc="ranking">
+                <option value="coverage">Taux de codes mSupply sans correspondance</option>
+                ${fields.map((field, index) => `<option value="${index}">Écart de total · ${field}</option>`).join('')}
+            </select></label>
+            <p>Du plus grand écart au plus faible, selon la valeur absolue de l’écart de total. Les valeurs signées figurent dans le tableau.</p>
+            <div data-rc="structures"></div>
+        </section>
         <section class="rc-panel" data-rc="details" hidden>
             <h3 data-rc="detail-title" tabindex="-1"></h3>
             <div class="rc-actions">
@@ -157,6 +191,8 @@
         let rows = [];
         let chosen;
         let monthStats;
+        let districtGroups = [];
+        let rankingReport;
         let view = 'differences';
         let page = 0;
         let generation = 0;
@@ -235,18 +271,44 @@
             });
         }
 
+        function renderRanking() {
+            const metric = el('ranking').value;
+            const byCoverage = metric === 'coverage';
+            const groups = districtGroups.filter(group => !group.id.startsWith('name:') && rankScore(group, metric) != null)
+                .sort((a, b) => rankScore(b, metric) - rankScore(a, metric) || a.label.localeCompare(b.label, 'fr'));
+            const headers = byCoverage
+                ? ['Rang', 'Structure', 'Codes mSupply', 'Codes communs', 'Correspondance', 'Sans correspondance']
+                : ['Rang', 'Structure', 'Lignes comparables', 'Total mSupply', 'Total SYGESS', 'Écart SYGESS − mSupply'];
+            const lines = groups.map((group, index) => {
+                const total = group.totals[Number(metric)];
+                return [index + 1, group.label, ...(byCoverage
+                    ? [group.msupplyCodes, group.matched, percentage(group.coverage), percentage(rankScore(group, metric))]
+                    : [group.comparable, valueLabel(total.msupply), valueLabel(total.sygess), deltaLabel(total.gap)])];
+            });
+            rankingReport = { title: el('ranking').selectedOptions[0].text, headers, lines };
+            buttonGrid(el('structures'), headers, lines.map((line, index) => line.map((cell, column) => column !== 1 ? cell : {
+                label: cell, click: () => {
+                    el('structure').value = groups[index].id;
+                    render();
+                    showDetails(`${cell} · ${monthLabel(month.value)}`, groups[index].rows, 'differences', true);
+                }
+            })));
+        }
+
         function render() {
             if (!loaded) return;
             const search = searchKey(el('item').value.trim());
-            const visible = rows.filter(row => (!el('structure').value || structureKey(row) === el('structure').value) &&
+            const visible = rows.filter(row => row.month === month.value &&
                 (!el('programme').value || programmeKey(row) === el('programme').value) &&
                 searchKey([row.item, row.code, ...row.msupply.map(source => source.code)].join(' ')).includes(search));
-            const current = visible.filter(row => row.month === month.value);
+            const current = visible.filter(row => !el('structure').value || structureKey(row) === el('structure').value);
             const stats = monthStats = summarize(current);
-            const rate = stats.comparable ? fmt.format(100 * stats.differences / stats.comparable) + ' %' : '—';
+            const scope = el('structure').selectedOptions[0].text;
+            el('scope').textContent = scope + ' · ' + monthLabel(month.value);
             el('kpis').replaceChildren(...[
-                ['Transmission datée', stats.transmitted], ['Lignes comparables', stats.comparable],
-                ['Lignes en écart', stats.differences], ['Taux d’écart', rate], ['Non comparables', stats.unresolved]
+                ['Codes mSupply', stats.msupplyCodes], ['Codes SYGESS', stats.sygessCodes],
+                ['Codes communs', stats.matched], ['Correspondance', percentage(stats.coverage)],
+                ['Lignes utilisées pour les totaux', stats.comparable]
             ].map(([label, value]) => {
                 const card = document.createElement('div');
                 const amount = document.createElement('strong');
@@ -254,6 +316,11 @@
                 card.append(amount, document.createTextNode(label));
                 return card;
             }));
+            table(el('totals'), ['Indicateur', 'Total mSupply', 'Total SYGESS', 'Écart SYGESS − mSupply'],
+                fields.map((field, index) => {
+                    const total = stats.totals[index];
+                    return [field, valueLabel(total.msupply), valueLabel(total.sygess), total.gap == null ? '—' : deltaLabel(total.gap)];
+                }));
             const choose = item => showDetails(`${item.label} · ${monthLabel(month.value)}`,
                 current.filter(item.includes),
                 item.key === 'entered' ? 'physical' : ['comparable', 'differences'].includes(item.key) ? 'differences' : 'msupply', true);
@@ -261,12 +328,9 @@
             buttonGrid(el('timeline'), ['Mois', ...series.map(item => item.label)], [[
                 monthLabel(month.value), ...series.map(item => ({ label: String(stats[item.key]), click: () => choose(item) }))
             ]]);
-            const groups = groupStructures(current);
-            buttonGrid(el('structures'), ['Structure', 'Comparables', 'En écart', 'Non comparables'], groups.map(group => [
-                { label: group.label, click: () => showDetails(`${group.label} · ${monthLabel(month.value)}`, group.rows, 'differences', true) },
-                group.comparable, group.differences, group.unresolved
-            ]));
-            showDetails('Détail · ' + monthLabel(month.value), current, 'differences');
+            districtGroups = groupStructures(visible);
+            renderRanking();
+            showDetails(scope + ' · ' + monthLabel(month.value), current, 'differences');
         }
 
         async function load() {
@@ -275,12 +339,12 @@
             loaded = false;
             el('status').textContent = 'Chargement des données…';
             el('details').hidden = true;
-            ['kpis', 'chart', 'timeline', 'structures'].forEach(name => el(name).replaceChildren());
+            ['scope', 'kpis', 'totals', 'chart', 'timeline', 'structures'].forEach(name => el(name).replaceChildren());
             try {
                 const result = await options.load(month.value);
                 if (sequence !== generation) return;
                 rows = result.map(classify);
-                fillSelect(el('structure'), structureKey, 'structure', 'Toutes');
+                fillSelect(el('structure'), structureKey, 'structure', 'District · Compilation');
                 fillSelect(el('programme'), programmeKey, 'programme', 'Tous');
                 el('status').textContent = rows.length ? '' : 'Aucune donnée pour cette période.';
                 loaded = true;
@@ -292,6 +356,7 @@
 
         month.addEventListener('change', load);
         ['structure', 'programme'].forEach(name => el(name).addEventListener('change', render));
+        el('ranking').addEventListener('change', () => { if (loaded) renderRanking(); });
         el('item').addEventListener('input', render);
         root.querySelectorAll('[data-view]').forEach(button => button.addEventListener('click', () => {
             view = button.dataset.view; page = 0; drawDetail();
@@ -302,8 +367,8 @@
             el('pdf').disabled = el('ppt').disabled = true;
             try {
                 await window.downloadRequisitionComparison(format, {
-                    title: chosen.title, rows: chosen.rows, monthStats, groups: groupStructures(chosen.rows), fields, series, statuses, summarize,
-                    monthLabel, dateLabel, deltaLabel, valueLabel, month: month.value, assets: options.assets
+                    title: el('scope').textContent, detailTitle: chosen.title, rows: chosen.rows, monthStats, ranking: rankingReport,
+                    fields, series, statuses, percentage, monthLabel, dateLabel, deltaLabel, valueLabel, month: month.value, assets: options.assets
                 });
             } catch (error) {
                 el('status').textContent = 'L’export n’a pas pu être créé. Réessayez.';
